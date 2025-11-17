@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=C:\Users\Tarik Gaming PC\Desktop\kascompute-service\target\debug\build\mime_guess-b41fd2411236ead1\out\mime_types_generated.rs

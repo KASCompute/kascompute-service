@@ -1,0 +1,14 @@
+{
+  "name": "KASCompute Token",
+  "symbol": "KCT",
+  "total_supply": 10000000000,
+  "decimals": 8,
+  "mining_years": 14,
+  "mining_start_year": 2025,
+  "mining_end_year": 2039,
+  "mining_end_month": 1,
+  "emission_model": "Kaspa anchored slow decay",
+  "treasury_pct": 0.2,
+  "investor_pct": 0.1,
+  "community_pct": 0.7
+}

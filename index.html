@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KASCompute Dashboard – v5</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --bg:#0b0f14; --ink:#fff; --muted:#9ca3af; --accent:#00E3C0; }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); }
+    header{ display:flex; gap:12px; align-items:center; padding:16px 20px; border-bottom:1px solid #1f2937; }
+    .logo{ font-weight:900; letter-spacing:.5px; color:var(--accent); }
+    main{ max-width:1150px; margin:0 auto; padding:20px; }
+    .grid{ display:grid; gap:16px; grid-template-columns:1fr; }
+    @media(min-width:960px){ .grid{ grid-template-columns: 1fr 1fr; } }
+    .card{ background:#0f172a; border:1px solid #1f2937; border-radius:16px; padding:16px; }
+    label{ font-size:12px; color:#d1d5db; display:block; margin-bottom:6px; }
+    input{ width:100%; padding:10px 12px; border-radius:10px; border:1px solid #243244; background:#0b1220; color:#e5e7eb; }
+    .row{ display:flex; gap:10px; }
+    .row > div{ flex:1; }
+    button{ background:var(--accent); color:#06251f; font-weight:800; border:0; padding:10px 14px; border-radius:10px; cursor:pointer; }
+    .muted{ color:var(--muted); font-size:12px; }
+    .status{ margin-left:auto; display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; }
+    .dot{ width:10px; height:10px; border-radius:99px; background:#ef4444; }
+    .dot.ok{ background:#22c55e; }
+    table{ width:100%; border-collapse:collapse; font-size:12px; }
+    th,td{ padding:8px 10px; border-bottom:1px solid #1f2937; text-align:right; }
+    th:first-child, td:first-child{ text-align:left; }
+    .toolbar{ display:flex; gap:10px; align-items:center; justify-content:flex-end; margin-top:10px; }
+    .kpi{ display:grid; grid-template-columns: repeat(3,1fr); gap:10px; margin-top:8px; }
+    .kpi .card{ padding:10px; text-align:center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">KASCompute</div>
+    <div class="status"><span class="dot" id="dot"></span><span id="txt">Verbinde…</span></div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="card">
+        <h3>Reward Preview</h3>
+        <div class="row">
+          <div>
+            <label>Monat</label>
+            <input type="number" id="m" value="12" min="0" max="240">
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="calcReward">Berechnen</button>
+        </div>
+        <div class="muted" id="rewardInfo"></div>
+        <canvas id="rewardChart" height="140" style="margin-top:10px;"></canvas>
+      </section>
+
+      <section class="card">
+        <h3>Investor Value Flow</h3>
+        <div class="row">
+          <div><label>Jahresgebühren</label><input type="number" id="fee" value="2000000"></div>
+          <div><label>Investor-Anteil (0–1)</label><input type="number" id="pct" step="0.01" value="0.25"></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <div><label>Jahre</label><input type="number" id="years" value="10"></div>
+          <div><label>Wachstum p.a.</label><input type="number" id="growth" step="0.01" value="0.10"></div>
+          <div><label>Discount p.a.</label><input type="number" id="disc" step="0.01" value="0.12"></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <div><label>Investition (CAPEX)</label><input type="number" id="capex" value="500000"></div>
+          <div></div><div></div>
+        </div>
+        <div class="toolbar">
+          <button id="runInvestor">Simulieren</button>
+          <a id="csvLink" href="#" download="investor_value_flow.csv"><button>CSV export</button></a>
+        </div>
+        <div class="kpi">
+          <div class="card"><div class="muted">Total Investor</div><div id="k_total" style="font-weight:800;"></div></div>
+          <div class="card"><div class="muted">NPV</div><div id="k_npv" style="font-weight:800;"></div></div>
+          <div class="card"><div class="muted">IRR</div><div id="k_irr" style="font-weight:800;"></div></div>
+        </div>
+        <div class="kpi">
+          <div class="card"><div class="muted">Payback (einfach)</div><div id="k_pb_s" style="font-weight:800;"></div></div>
+          <div class="card"><div class="muted">Payback (discounted)</div><div id="k_pb_d" style="font-weight:800;"></div></div>
+          <div class="card"><div class="muted">&nbsp;</div><div>&nbsp;</div></div>
+        </div>
+        <canvas id="invChart" height="160" style="margin-top:10px;"></canvas>
+        <div class="muted" style="margin-top:10px;">Tabelle</div>
+        <div style="max-height:200px; overflow:auto;">
+          <table><thead><tr><th>Jahr</th><th>Brutto</th><th>Investor</th><th>Discounted</th></tr></thead><tbody id="tbody"></tbody></table>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:16px;">
+      <h3>Service-Metriken</h3>
+      <pre id="metrics" class="muted" style="white-space:pre-wrap;"></pre>
+    </section>
+  </main>
+
+  <script>
+    const API = "http://127.0.0.1:8080";
+    const dot = document.getElementById('dot');
+    const txt = document.getElementById('txt');
+    async function ping(){
+      try{
+        const r = await fetch(API + "/health");
+        if((await r.text()).trim() === "ok"){ dot.classList.add('ok'); txt.textContent="Verbunden"; } else { dot.classList.remove('ok'); txt.textContent="Unerwartete Antwort"; }
+      } catch(e){ dot.classList.remove('ok'); txt.textContent="Keine Verbindung"; }
+    }
+    ping(); setInterval(ping, 4000);
+
+    // Reward chart
+    const rc = new Chart(document.getElementById('rewardChart'), { type:'line', data:{ labels:[], datasets:[{label:'Reward/Block', data:[]}] } });
+    document.getElementById('calcReward').onclick = async () => {
+      const m = parseInt(document.getElementById('m').value || "0", 10);
+      const xs = Array.from({length:24}, (_,i)=> Math.max(0, m - 12 + i));
+      const ys = [];
+      for (const k of xs) {
+        const r = await fetch(API + "/reward/preview", { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({month:k}) });
+        const j = await r.json();
+        ys.push(j.reward_per_block);
+      }
+      rc.data.labels = xs; rc.data.datasets[0].data = ys; rc.update();
+      document.getElementById('rewardInfo').textContent = `Monat ${m} → Reward/Block = ${ys[12].toFixed(6)}`;
+    };
+    document.getElementById('calcReward').click();
+
+    // Investor chart + CSV
+    const ic = new Chart(document.getElementById('invChart'), { type:'line', data:{ labels:[], datasets:[{label:'Investor', data:[]},{label:'Discounted', data:[]}] } });
+    function fmt(n){ return (n ?? 0).toLocaleString('de-DE', {maximumFractionDigits:2}); }
+    function fmtPct(x){ return (x==null) ? "–" : (x*100).toFixed(2) + "%"; }
+    function fmtYears(y){ return (y==null) ? "–" : y.toFixed(2) + " J."; }
+
+    async function runInvestor() {
+      const fee = parseFloat(document.getElementById('fee').value||"0");
+      const pct = parseFloat(document.getElementById('pct').value||"0");
+      const years = parseInt(document.getElementById('years').value||"1",10);
+      const growth = parseFloat(document.getElementById('growth').value||"0");
+      const disc = parseFloat(document.getElementById('disc').value||"0");
+      const capex = parseFloat(document.getElementById('capex').value||"0");
+      const url = `${API}/investor/value_flow?fee_annual=${fee}&investor_pct=${pct}&years=${years}&growth=${growth}&discount=${disc}&capex=${capex}`;
+      const r = await fetch(url); const j = await r.json();
+
+      const labels = [], s1 = [], s2 = [];
+      const rows = [];
+      for(const row of j.flows){
+        labels.push(row.year);
+        s1.push(row.investor_share);
+        s2.push(row.discounted);
+        rows.push([row.year, row.gross_fees, row.investor_share, row.discounted]);
+      }
+      ic.data.labels = labels; ic.data.datasets[0].data = s1; ic.data.datasets[1].data = s2; ic.update();
+
+      document.getElementById('k_total').textContent = fmt(j.total_investor);
+      document.getElementById('k_npv').textContent = fmt(j.npv_investor);
+      document.getElementById('k_irr').textContent = (j.irr==null) ? "–" : fmtPct(j.irr);
+      document.getElementById('k_pb_s').textContent = fmtYears(j.payback_simple_years);
+      document.getElementById('k_pb_d').textContent = fmtYears(j.payback_discounted_years);
+
+      const tb = document.getElementById('tbody'); tb.innerHTML = "";
+      for(const r of rows){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r[0]}</td><td>${fmt(r[1])}</td><td>${fmt(r[2])}</td><td>${fmt(r[3])}</td>`;
+        tb.appendChild(tr);
+      }
+
+      // CSV export (client-side)
+      const header = "year,gross_fees,investor_share,discounted\n";
+      const csv = header + rows.map(r => `${r[0]},${r[1]},${r[2]},${r[3]}`).join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const urlCsv = URL.createObjectURL(blob);
+      const link = document.getElementById('csvLink');
+      link.href = urlCsv;
+    }
+    document.getElementById('runInvestor').onclick = runInvestor;
+    document.getElementById('runInvestor').click();
+
+    // Metrics
+    async function refreshMetrics(){
+      try{
+        const r = await fetch(API + "/metrics");
+        const t = await r.text();
+        document.getElementById('metrics').textContent = t;
+      } catch(e) {
+        document.getElementById('metrics').textContent = "Fehler beim Laden der Metriken.";
+      }
+    }
+    refreshMetrics(); setInterval(refreshMetrics, 5000);
+  </script>
+</body>
+</html>

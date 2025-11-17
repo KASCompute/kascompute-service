@@ -1,0 +1,15 @@
+token:
+  name: "KASCompute Token"
+  symbol: "KCT"
+  total_supply: 10000000000
+  decimals: 8
+distribution:
+  mining_pct: 0.90
+  treasury_pct: 0.10
+  vc_premine_pct: 0.0
+emission:
+  start_reward_per_block: 200.0
+  monthly_reduction_pct: 0.01
+  est_duration_years: 14
+treasury:
+  vest_years: 4

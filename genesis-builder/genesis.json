@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "name": "KCT",
+    "symbol": "KCT",
+    "decimals": 8,
+    "version": "1.0",
+    "description": "KASCompute Token – Utility/fee token for the compute layer."
+  },
+  "total_supply": 1000000000,
+  "allocations": [
+    {
+      "address": "TREASURY_MULTISIG",
+      "label": "Treasury (vesting 4y, linear)",
+      "amount": 100000000
+    },
+    {
+      "address": "MINING_POOL",
+      "label": "Mining Emission (unlocked)",
+      "amount": 900000000
+    }
+  ],
+  "emission": {
+    "start_reward_per_block": 200.0,
+    "monthly_reduction_pct": 0.01
+  },
+  "treasury_vesting_years": 4
+}

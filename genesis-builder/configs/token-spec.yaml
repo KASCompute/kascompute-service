@@ -1,0 +1,19 @@
+# token-spec.yaml — KCT (Werte gemäß Whitepaper-Stand)
+meta:
+  name: "KCT"
+  symbol: "KCT"
+  decimals: 8
+  version: "1.0"
+  description: "KASCompute Token – Utility/fee token for the compute layer."
+
+supply:
+  total_supply: 1000000000        # 1,000,000,000
+  distribution:
+    mining_pct: 0.90              # 90% Mining-Emission
+    treasury_pct: 0.10            # 10% Treasury
+    vc_premine_pct: 0.00          # 0% VC/PreMine
+  emission:
+    start_reward_per_block: 200.0
+    monthly_reduction_pct: 0.01   # ≈1%/Monat
+  treasury:
+    vest_years: 4                 # linear über 4 Jahre
