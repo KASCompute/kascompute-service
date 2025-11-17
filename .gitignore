@@ -1,0 +1,21 @@
+# Rust / Cargo
+target/
+Cargo.lock
+
+# Testnet launcher builds
+testnet-launcher/target/
+testnet-launcher/*.exe
+
+# Installer / Setup
+KASComputeInstaller/
+*.iss
+*.log
+
+# Frontend build
+public/dist/
+public/node_modules/
+
+# Sonstiges
+.DS_Store
+Thumbs.db
+*.tmp
