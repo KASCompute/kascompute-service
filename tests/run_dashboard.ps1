@@ -4,30 +4,28 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# 👉 Pfad zu deinem Projekt (mit Anführungszeichen wegen "Gaming PC")
+# Pfad zu deinem Projekt
 $projectPath = "C:\Users\Tarik Gaming PC\Desktop\kascompute-service"
 
 Write-Host ">>> Changing directory to project..." -ForegroundColor Cyan
 Set-Location $projectPath
 
 if (-not $NoBuild) {
-    Write-Host ">>> Building testnet-launcher (release)..." -ForegroundColor Cyan
-    cargo build -p testnet-launcher --release
+    Write-Host ">>> Building kascompute-service (release)..." -ForegroundColor Cyan
+    cargo build --release
     Write-Host ">>> Build finished." -ForegroundColor Green
-} else {
-    Write-Host ">>> Skipping build (NoBuild flag set)." -ForegroundColor Yellow
 }
 
-# Pfad zur EXE
-$exe = Join-Path $projectPath "target\release\testnet-launcher.exe"
+# Pfad zum neuen Backend-Binary
+$exe = Join-Path $projectPath "target\release\kascompute-service.exe"
 
 if (-not (Test-Path $exe)) {
-    Write-Host "!!! Launcher EXE not found: $exe" -ForegroundColor Red
-    Write-Host "   Run without -NoBuild so it can be compiled." -ForegroundColor Red
+    Write-Host "ERROR: Executable not found: $exe" -ForegroundColor Red
+    Write-Host "   Did the build fail? Try running without -NoBuild." -ForegroundColor Yellow
     exit 1
 }
 
-Write-Host ">>> Starting testnet-launcher in a new window..." -ForegroundColor Cyan
+Write-Host ">>> Starting kascompute-service in a new window..." -ForegroundColor Cyan
 Start-Process $exe
 
 Start-Sleep -Seconds 2
