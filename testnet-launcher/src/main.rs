@@ -1,90 +1,54 @@
 use axum::{
     extract::Query,
     routing::{get, post},
+    response::Redirect,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{env, fs};
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
+use anyhow::Result;
 
-const TOKEN_CONFIG_PATH: &str = "testnet/config.json";
+// -------------------------
+// KCT EMISSION MODEL
+// -------------------------
 
-#[derive(Serialize, Deserialize, Clone)]
-struct TokenConfig {
-    name: String,
-    symbol: String,
-    total_supply: u64,
-    decimals: u8,
-    mining_years: u32,
-    mining_start_year: u32,
-    mining_end_year: u32,
-    mining_end_month: u8,
-    emission_model: String,
-    treasury_pct: f64,
-    investor_pct: f64,
-    community_pct: f64,
+const START_REWARD_KCT: f64 = 200.0;      // Start: 200 KCT pro Block
+const MONTHLY_DECAY: f64 = 0.01;          // 1 % pro Monat
+const TOTAL_MONTHS: u32 = 168;            // 14 Jahre
+const BLOCKS_PER_MINUTE: f64 = 1.0;
+const MINUTES_PER_MONTH: f64 = 30.0 * 24.0 * 60.0;
+const BLOCKS_PER_MONTH: f64 = BLOCKS_PER_MINUTE * MINUTES_PER_MONTH;
+
+/// Block-Reward in Monat m (1..168)
+fn block_reward_for_month(month: u32) -> f64 {
+    let m = month.clamp(1, TOTAL_MONTHS);
+    let factor = (1.0 - MONTHLY_DECAY).powi((m - 1) as i32);
+    START_REWARD_KCT * factor
 }
 
-fn default_token_config() -> TokenConfig {
-    TokenConfig {
-        name: "KASCompute Token".to_string(),
-        symbol: "KCT".to_string(),
-        total_supply: 10_000_000_000,
-        decimals: 8,
-        mining_years: 14,
-        mining_start_year: 2025,
-        mining_end_year: 2039,
-        mining_end_month: 1,
-        emission_model: "Kaspa anchored slow decay".to_string(),
-        treasury_pct: 0.20,
-        investor_pct: 0.10,
-        community_pct: 0.70,
-    }
+/// Gesamt-Emission in Monat m (nur Info, wird im JSON mit ausgegeben)
+fn monthly_emission_for_month(month: u32) -> f64 {
+    block_reward_for_month(month) * BLOCKS_PER_MONTH
 }
 
-fn load_token_config() -> TokenConfig {
-    if let Ok(text) = fs::read_to_string(TOKEN_CONFIG_PATH) {
-        if let Ok(cfg) = serde_json::from_str::<TokenConfig>(&text) {
-            return cfg;
-        }
-        eprintln!("WARN: Failed parsing config.json, using default.");
-    } else {
-        eprintln!("WARN: config.json missing, using default.");
-    }
-    default_token_config()
-}
-
-async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "status": "ok" }))
-}
-
-// ---------------- Reward Preview ----------------
+// -------------------------
+// API TYPES
+// -------------------------
 
 #[derive(Deserialize)]
-struct RewardPreviewRequest {
+struct RewardRequest {
     month: u32,
 }
 
 #[derive(Serialize)]
-struct RewardPreviewResponse {
+struct RewardResponse {
     month: u32,
     block_reward_kct: f64,
+    monthly_emission_kct: f64,
     notes: String,
 }
-
-async fn reward_preview(Json(req): Json<RewardPreviewRequest>) -> Json<RewardPreviewResponse> {
-    let base_reward = 1_000_000.0;
-    let decay = 0.98_f64.powf(req.month as f64);
-    let reward = base_reward * decay;
-
-    Json(RewardPreviewResponse {
-        month: req.month,
-        block_reward_kct: reward,
-        notes: format!("Demo emission preview for month {}", req.month),
-    })
-}
-
-// ---------------- Investor Flow ----------------
 
 #[derive(Deserialize)]
 struct InvestorQuery {
@@ -96,7 +60,7 @@ struct InvestorQuery {
 }
 
 #[derive(Serialize)]
-struct InvestorValueResponse {
+struct InvestorResponse {
     years: u32,
     gross_sum: f64,
     investor_sum: f64,
@@ -104,62 +68,109 @@ struct InvestorValueResponse {
     apy_estimate: f64,
 }
 
-async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorValueResponse> {
-    let mut gross = 0.0;
-    let mut inv_total = 0.0;
-    let mut npv = 0.0;
-    let mut fee = q.fee_annual;
+// -------------------------
+// HANDLER
+// -------------------------
 
-    for year in 0..q.years {
-        gross += fee;
-        let inv_y = fee * q.investor_pct;
-        inv_total += inv_y;
+async fn health() -> &'static str {
+    "OK"
+}
 
-        let df = (1.0 + q.discount).powi(year as i32);
-        npv += inv_y / df.max(1.0);
+// ECHTES KCT-EMISSIONSMODELL, KEIN DEMO
+async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> {
+    let month = req.month.clamp(1, TOTAL_MONTHS);
+    let block_reward = block_reward_for_month(month);
+    let monthly_emission = monthly_emission_for_month(month);
 
-        fee *= 1.0 + q.growth;
-    }
+    let notes = format!(
+        "KCT emission preview for month {} (start 200 KCT, 1% monthly decay over 14 years).",
+        month
+    );
 
-    Json(InvestorValueResponse {
-        years: q.years,
-        gross_sum: gross,
-        investor_sum: inv_total,
-        npv_investor: npv,
-        apy_estimate: 0.0,
+    Json(RewardResponse {
+        month,
+        block_reward_kct: block_reward,
+        monthly_emission_kct: monthly_emission,
+        notes,
     })
 }
 
-// ---------------- Token Info ----------------
+// einfacher, aber realistischer Investor-Cashflow (KEIN „Demo“-Label)
+async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorResponse> {
+    let years = q.years.max(1).min(30);
+    let mut gross_sum = 0.0;
+    let mut investor_sum = 0.0;
+    let mut npv = 0.0;
 
-async fn token_info() -> Json<TokenConfig> {
-    Json(load_token_config())
+    let mut fee = q.fee_annual.max(0.0);
+    let investor_pct = q.investor_pct.clamp(0.0, 1.0);
+    let growth = q.growth.max(0.0);
+    let discount = q.discount.max(0.0);
+
+    for t in 1..=years {
+        if t > 1 {
+            fee *= 1.0 + growth;
+        }
+
+        let cf_gross = fee;
+        let cf_investor = cf_gross * investor_pct;
+
+        gross_sum += cf_gross;
+        investor_sum += cf_investor;
+
+        let disc_factor = (1.0 + discount).powi(t as i32);
+        npv += cf_investor / disc_factor;
+    }
+
+    // Grobe APY-Schätzung: durchschn. Investor-CF / erste Fee
+    let avg_investor = investor_sum / years as f64;
+    let base = q.fee_annual.max(1.0);
+    let apy_estimate = (avg_investor / base).max(0.0);
+
+    Json(InvestorResponse {
+        years,
+        gross_sum,
+        investor_sum,
+        npv_investor: npv,
+        apy_estimate,
+    })
 }
 
-
-// ---------------- MAIN (AXUM 0.7 FIX) ----------------
+// -------------------------
+// MAIN
+// -------------------------
 
 #[tokio::main]
-async fn main() {
-    // Static folder for dashboard
-    let static_files =
-        ServeDir::new("testnet-launcher/public").append_index_html_on_directories(true);
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
+    // statische Dashboard-Dateien
+    let static_dir = ServeDir::new("testnet-launcher/public");
 
     let app = Router::new()
+        // API-Routen
         .route("/health", get(health))
         .route("/reward/preview", post(reward_preview))
         .route("/investor/value_flow", get(investor_value_flow))
-        .route("/token/info", get(token_info))
-        .nest_service("/dashboard", static_files);
+        // Root -> Dashboard
+        .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
+        // Dashboard unter /dashboard
+        .nest_service("/dashboard", static_dir);
 
-    // AXUM 0.7: Listener statt Server::bind()
-    let port = env::var("PORT").unwrap_or("8080".into());
-    let addr = format!("0.0.0.0:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .expect("Could not bind TCP port");
+    // Port lokal (8080) oder von Railway (PORT)
+    let port: u16 = std::env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()
+        .expect("PORT must be a number");
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
 
-    println!("🔥 KASCompute Testnet Launcher running at http://{}/dashboard/", addr);
+    let listener = TcpListener::bind(addr).await?;
+    println!(
+        "KASCompute Testnet Launcher running at http://127.0.0.1:{}/dashboard/",
+        port
+    );
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }

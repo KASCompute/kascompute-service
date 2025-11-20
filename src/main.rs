@@ -11,7 +11,30 @@ use tower_http::services::ServeDir;
 use anyhow::Result;
 
 // -------------------------
-// TYPES
+// KCT EMISSION MODEL
+// -------------------------
+
+const START_REWARD_KCT: f64 = 200.0;      // Start: 200 KCT pro Block
+const MONTHLY_DECAY: f64 = 0.01;          // 1 % pro Monat
+const TOTAL_MONTHS: u32 = 168;            // 14 Jahre
+const BLOCKS_PER_MINUTE: f64 = 1.0;
+const MINUTES_PER_MONTH: f64 = 30.0 * 24.0 * 60.0;
+const BLOCKS_PER_MONTH: f64 = BLOCKS_PER_MINUTE * MINUTES_PER_MONTH;
+
+/// Block-Reward in Monat m (1..168)
+fn block_reward_for_month(month: u32) -> f64 {
+    let m = month.clamp(1, TOTAL_MONTHS);
+    let factor = (1.0 - MONTHLY_DECAY).powi((m - 1) as i32);
+    START_REWARD_KCT * factor
+}
+
+/// Gesamt-Emission in Monat m (nur Info, wird im JSON mit ausgegeben)
+fn monthly_emission_for_month(month: u32) -> f64 {
+    block_reward_for_month(month) * BLOCKS_PER_MONTH
+}
+
+// -------------------------
+// API TYPES
 // -------------------------
 
 #[derive(Deserialize)]
@@ -23,6 +46,7 @@ struct RewardRequest {
 struct RewardResponse {
     month: u32,
     block_reward_kct: f64,
+    monthly_emission_kct: f64,
     notes: String,
 }
 
@@ -52,17 +76,11 @@ async fn health() -> &'static str {
     "OK"
 }
 
-// sehr einfache Emissions-Formel (Demo: 1 % monatliche Reduktion ab 200 KCT)
+// ECHTES KCT-EMISSIONSMODELL, KEIN DEMO
 async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> {
-    // Bound month to 1..168
-    let month = req.month.clamp(1, 168);
-
-    // KCT Emission Model (REAL)
-    let start_reward = 200.0_f64;
-    let decay = 0.99_f64;
-
-    // Reward per block in month m
-    let block_reward = start_reward * decay.powi((month - 1) as i32);
+    let month = req.month.clamp(1, TOTAL_MONTHS);
+    let block_reward = block_reward_for_month(month);
+    let monthly_emission = monthly_emission_for_month(month);
 
     let notes = format!(
         "KCT emission preview for month {} (start 200 KCT, 1% monthly decay over 14 years).",
@@ -72,28 +90,28 @@ async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> 
     Json(RewardResponse {
         month,
         block_reward_kct: block_reward,
+        monthly_emission_kct: monthly_emission,
         notes,
     })
 }
 
-// sehr einfache Investor-Cashflow-Simulation (Demo)
+// einfacher, aber realistischer Investor-Cashflow (KEIN „Demo“-Label)
 async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorResponse> {
     let years = q.years.max(1).min(30);
-    let mut cashflows = Vec::with_capacity(years as usize);
+    let mut gross_sum = 0.0;
+    let mut investor_sum = 0.0;
+    let mut npv = 0.0;
 
     let mut fee = q.fee_annual.max(0.0);
     let investor_pct = q.investor_pct.clamp(0.0, 1.0);
     let growth = q.growth.max(0.0);
     let discount = q.discount.max(0.0);
 
-    let mut gross_sum = 0.0;
-    let mut investor_sum = 0.0;
-    let mut npv = 0.0;
-
     for t in 1..=years {
         if t > 1 {
             fee *= 1.0 + growth;
         }
+
         let cf_gross = fee;
         let cf_investor = cf_gross * investor_pct;
 
@@ -102,13 +120,11 @@ async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorRes
 
         let disc_factor = (1.0 + discount).powi(t as i32);
         npv += cf_investor / disc_factor;
-
-        cashflows.push(cf_investor);
     }
 
-    // sehr grobe APY-Schätzung auf Basis von einfacher Durchschnittsrendite
-    let avg_investor = if years > 0 { investor_sum / years as f64 } else { 0.0 };
-    let base = fee.max(1.0); // nur um Division durch 0 zu vermeiden
+    // Grobe APY-Schätzung: durchschn. Investor-CF / erste Fee
+    let avg_investor = investor_sum / years as f64;
+    let base = q.fee_annual.max(1.0);
     let apy_estimate = (avg_investor / base).max(0.0);
 
     Json(InvestorResponse {
@@ -128,28 +144,27 @@ async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorRes
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    // statische Dateien (Dashboard)
+    // statische Dashboard-Dateien
     let static_dir = ServeDir::new("testnet-launcher/public");
 
     let app = Router::new()
-        // API
+        // API-Routen
         .route("/health", get(health))
         .route("/reward/preview", post(reward_preview))
         .route("/investor/value_flow", get(investor_value_flow))
-        // Root → Dashboard
+        // Root -> Dashboard
         .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
         // Dashboard unter /dashboard
         .nest_service("/dashboard", static_dir);
 
-    // Port (lokal 8080, auf Railway aus PORT-Env)
+    // Port lokal (8080) oder von Railway (PORT)
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()
         .expect("PORT must be a number");
-
     let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
-    let listener = TcpListener::bind(addr).await?;
 
+    let listener = TcpListener::bind(addr).await?;
     println!(
         "KASCompute Testnet Launcher running at http://127.0.0.1:{}/dashboard/",
         port

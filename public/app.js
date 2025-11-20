@@ -31,7 +31,7 @@ const I18N = {
     rewardMonth: "Month",
     rewardBlockReward: "Estimated block reward",
     rewardNote: "Note",
-    rewardNoteDemo: "KCT-emission preview for month",
+    rewardNoteDemo: "Demo emission preview for month",
 
     invHorizon: "Horizon",
     invGross: "Gross volume",
@@ -43,7 +43,7 @@ const I18N = {
     trTotal: "Total Treasury",
     trVestingYears: "Vesting duration",
     trCliff: "Cliff",
-    trLinear: "Linear vesting schedule",
+    trLinear: "Linear vesting (demo)",
 
     axisCash: "Yearly cashflows",
     axisCum: "Cumulative cash",
@@ -57,7 +57,7 @@ const I18N = {
     rewardMonth: "Monat",
     rewardBlockReward: "Geschätzter Block-Reward",
     rewardNote: "Hinweis",
-    rewardNoteDemo: "KCT -Emissionsvorschau für Monat",
+    rewardNoteDemo: "Demo-Emissionsvorschau für Monat",
 
     invHorizon: "Zeithorizont",
     invGross: "Bruttovolumen",
@@ -69,7 +69,7 @@ const I18N = {
     trTotal: "Treasury-Gesamt",
     trVestingYears: "Vesting-Dauer",
     trCliff: "Cliff",
-    trLinear: "Lineares Vesting-Schema",
+    trLinear: "Lineares Vesting (Demo)",
 
     axisCash: "Jährliche Cashflows",
     axisCum: "Kumuliertes Cash",
