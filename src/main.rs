@@ -1,160 +1,157 @@
 use axum::{
     extract::Query,
-    http::StatusCode,
-    response::IntoResponse,
     routing::{get, post},
+    response::Redirect,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use tower_http::services::ServeDir;
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
+use anyhow::Result;
 
-// --------------------------------------------------
-// 1️⃣ Datentypen
-// --------------------------------------------------
+// -------------------------
+// TYPES
+// -------------------------
 
 #[derive(Deserialize)]
-struct MonthRequest {
-    month: Option<u32>,
+struct RewardRequest {
+    month: u32,
 }
 
 #[derive(Serialize)]
 struct RewardResponse {
     month: u32,
     block_reward_kct: f64,
-    notes: &'static str,
+    notes: String,
 }
 
 #[derive(Deserialize)]
 struct InvestorQuery {
     fee_annual: f64,
     investor_pct: f64,
-    years: f64,
+    years: u32,
     growth: f64,
     discount: f64,
 }
 
 #[derive(Serialize)]
 struct InvestorResponse {
-    years: f64,
+    years: u32,
     gross_sum: f64,
     investor_sum: f64,
     npv_investor: f64,
     apy_estimate: f64,
-    notes: &'static str,
 }
 
-// --------------------------------------------------
-// 2️⃣ Tokenomics-Parameter (echte Werte)
-// --------------------------------------------------
-//
-// Entspricht deiner configs/tokenomics.yaml:
-//  - start_reward_per_block: 200.0
-//  - monthly_reduction_pct: 0.01
-//  - est_duration_years: 14
-//
+// -------------------------
+// HANDLER
+// -------------------------
 
-const START_REWARD_PER_BLOCK: f64 = 200.0;
-const MONTHLY_REDUCTION_PCT: f64 = 0.01;
-const EMISSION_YEARS: u32 = 14;
-const MONTHS_TOTAL: u32 = EMISSION_YEARS * 12;
-
-// --------------------------------------------------
-// 3️⃣ API-Endpunkte
-// --------------------------------------------------
-
-// Health check für Dashboard
 async fn health() -> &'static str {
-    "ok"
+    "OK"
 }
 
-// Reward preview – echte Emissionskurve
-async fn reward_preview(Json(payload): Json<MonthRequest>) -> impl IntoResponse {
-    // Monat aus Request, clamp auf [1, MONTHS_TOTAL]
-    let mut m = payload.month.unwrap_or(12);
-    if m < 1 {
-        m = 1;
-    }
-    if m > MONTHS_TOTAL {
-        m = MONTHS_TOTAL;
-    }
+// sehr einfache Emissions-Formel (Demo: 1 % monatliche Reduktion ab 200 KCT)
+async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> {
+    let month = if req.month == 0 { 1 } else { req.month.min(168) };
 
-    // Geometrische Abnahme: Start 200 KCT, jeden Monat -1 %
-    let reduction_factor = 1.0 - MONTHLY_REDUCTION_PCT;
-    let exponent = (m - 1) as i32;
-    let block_reward_kct = START_REWARD_PER_BLOCK * reduction_factor.powi(exponent);
+    let r0 = 200.0_f64;
+    let decay = 0.99_f64;
+    let reward = r0 * decay.powi((month - 1) as i32);
 
-    let resp = RewardResponse {
-        month: m,
-        block_reward_kct,
-        notes: "KCT emission: start 200 KCT/block, -1% per month over ~14 years (90% of 10B for mining).",
-    };
+    let notes = format!(
+        "Simple 1% monthly decay demo for month {} (start 200 KCT).",
+        month
+    );
 
-    (StatusCode::OK, Json(resp))
+    Json(RewardResponse {
+        month,
+        block_reward_kct: reward,
+        notes,
+    })
 }
 
-// Investor value flow – Post-Mining-Modell
-async fn investor_value_flow(Query(params): Query<InvestorQuery>) -> impl IntoResponse {
-    // Eingaben begrenzen
-    let years = params.years.clamp(1.0, 40.0);
-    let growth = params.growth.max(-0.99);   // max −99 %
-    let discount = params.discount.max(0.0); // kein negativer Discount
+// sehr einfache Investor-Cashflow-Simulation (Demo)
+async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorResponse> {
+    let years = q.years.max(1).min(30);
+    let mut cashflows = Vec::with_capacity(years as usize);
+
+    let mut fee = q.fee_annual.max(0.0);
+    let investor_pct = q.investor_pct.clamp(0.0, 1.0);
+    let growth = q.growth.max(0.0);
+    let discount = q.discount.max(0.0);
 
     let mut gross_sum = 0.0;
     let mut investor_sum = 0.0;
-    let mut npv_investor = 0.0;
+    let mut npv = 0.0;
 
-    // Jahr 1..years: Netzwerk-Fees mit Wachstum, Investor-Cut & Diskontierung
-    let mut year = 1.0;
-    while year <= years {
-        let fee_year = params.fee_annual * (1.0 + growth).powf(year - 1.0);
-        let cf_investor = fee_year * params.investor_pct;
+    for t in 1..=years {
+        if t > 1 {
+            fee *= 1.0 + growth;
+        }
+        let cf_gross = fee;
+        let cf_investor = cf_gross * investor_pct;
 
-        gross_sum += fee_year;
+        gross_sum += cf_gross;
         investor_sum += cf_investor;
-        npv_investor += cf_investor / (1.0 + discount).powf(year);
 
-        year += 1.0;
+        let disc_factor = (1.0 + discount).powi(t as i32);
+        npv += cf_investor / disc_factor;
+
+        cashflows.push(cf_investor);
     }
 
-    // Grobe APY-Schätzung aus Nominalsumme vs. NPV
-    let apy_estimate = if npv_investor > 0.0 && investor_sum > 0.0 {
-        (investor_sum / npv_investor).powf(1.0 / years) - 1.0
-    } else {
-        0.0
-    };
+    // sehr grobe APY-Schätzung auf Basis von einfacher Durchschnittsrendite
+    let avg_investor = if years > 0 { investor_sum / years as f64 } else { 0.0 };
+    let base = fee.max(1.0); // nur um Division durch 0 zu vermeiden
+    let apy_estimate = (avg_investor / base).max(0.0);
 
-    let response = InvestorResponse {
+    Json(InvestorResponse {
         years,
         gross_sum,
         investor_sum,
-        npv_investor,
+        npv_investor: npv,
         apy_estimate,
-        notes: "Post-mining fee model: annual network fees with growth & discount, investor receives a fixed share of fees.",
-    };
-
-    (StatusCode::OK, Json(response))
+    })
 }
 
-// --------------------------------------------------
-// 4️⃣ Hauptprogramm + Dashboard-Serving (Axum 0.7)
-// --------------------------------------------------
+// -------------------------
+// MAIN
+// -------------------------
 
 #[tokio::main]
-async fn main() {
-    // Statisches Dashboard
-    let static_dir = std::path::Path::new("testnet-launcher/public");
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
+    // statische Dateien (Dashboard)
+    let static_dir = ServeDir::new("testnet-launcher/public");
 
     let app = Router::new()
+        // API
         .route("/health", get(health))
         .route("/reward/preview", post(reward_preview))
         .route("/investor/value_flow", get(investor_value_flow))
-        .nest_service("/dashboard", ServeDir::new(static_dir))
-        .nest_service("/", ServeDir::new(static_dir));
+        // Root → Dashboard
+        .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
+        // Dashboard unter /dashboard
+        .nest_service("/dashboard", static_dir);
 
-    let addr = "0.0.0.0:8080";
-    println!("✅ KASCompute Testnet Launcher running at: http://127.0.0.1:8080/dashboard/");
+    // Port (lokal 8080, auf Railway aus PORT-Env)
+    let port: u16 = std::env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()
+        .expect("PORT must be a number");
 
-    let listener = TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
+    let listener = TcpListener::bind(addr).await?;
+
+    println!(
+        "KASCompute Testnet Launcher running at http://127.0.0.1:{}/dashboard/",
+        port
+    );
+
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }
