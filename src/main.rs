@@ -54,20 +54,24 @@ async fn health() -> &'static str {
 
 // sehr einfache Emissions-Formel (Demo: 1 % monatliche Reduktion ab 200 KCT)
 async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> {
-    let month = if req.month == 0 { 1 } else { req.month.min(168) };
+    // Bound month to 1..168
+    let month = req.month.clamp(1, 168);
 
-    let r0 = 200.0_f64;
+    // KCT Emission Model (REAL)
+    let start_reward = 200.0_f64;
     let decay = 0.99_f64;
-    let reward = r0 * decay.powi((month - 1) as i32);
+
+    // Reward per block in month m
+    let block_reward = start_reward * decay.powi((month - 1) as i32);
 
     let notes = format!(
-    "KCT emission preview for month {} based on a 1% monthly decay model (start 200 KCT).",
-    month
-);
+        "KCT emission preview for month {} (start 200 KCT, 1% monthly decay over 14 years).",
+        month
+    );
 
     Json(RewardResponse {
         month,
-        block_reward_kct: reward,
+        block_reward_kct: block_reward,
         notes,
     })
 }
