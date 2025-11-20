@@ -61,9 +61,9 @@ async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> 
     let reward = r0 * decay.powi((month - 1) as i32);
 
     let notes = format!(
-        "Simple 1% monthly decay demo for month {} (start 200 KCT).",
-        month
-    );
+    "KCT emission preview for month {} based on a 1% monthly decay model (start 200 KCT).",
+    month
+);
 
     Json(RewardResponse {
         month,
