@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/DEIN_GITHUB/KASCompute/main/A_digital_graphic_design_banner_displays_the_brand.png" width="100%">
+  <img src="assets/logo.png" width="200" alt="KASCompute Logo"/>
 </p>
 
 <h1 align="center">KASCompute — KCT Emission Engine & Live Tokenomics Dashboard</h1>
