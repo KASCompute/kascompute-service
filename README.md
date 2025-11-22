@@ -62,23 +62,25 @@ The dashboard visualizes the full curve.
 
 # 🏗 Project Structure
 
-```bash
+```
 kascompute-service/
-├── Cargo.toml                # Rust package manifest (kascompute-service)
-├── Cargo.lock
-├── src/
-│   └── main.rs               # Main Axum backend (serves API + dashboard)
-│
-├── testnet-launcher/         # Secondary binary (Railway launcher)
-│   ├── Cargo.toml
-│   ├── src/
-│   │   └── main.rs           # Mirrors main.rs logic for deployments
-│   └── public/
-│       ├── index.html        # Tokenomics dashboard UI
-│       ├── app.js            # Frontend logic + API integration
-│       └── style.css         # Styling / KASCompute theme
-│
-└── public/                   # Website assets (optional)
+├── src/                     # Main Rust service (local backend)
+├── testnet-launcher/        # Launcher binary used for Railway deployment
+│   ├── src/main.rs          # Mirrors src/main.rs logic for production
+│   └── public/              # Live dashboard frontend (index.html, app.js, style.css)
+├── public/                  # Website assets (optional, not the dashboard)
+├── assets/                  # Branding / logos / visuals
+├── scripts/                 # Helper scripts (local / deployment)
+├── configs/                 # Configuration files (reserved for future use)
+├── testnet/                 # Local testnet artifacts (optional)
+└── tests/                   # Tests (placeholder)
+```
+
+> **Important:**  
+> The **only** dashboard used by the live API is  
+> `testnet-launcher/public/index.html` + `app.js` + `style.css`.
+
+---
 🔌 API Endpoints
 Health Check
 
