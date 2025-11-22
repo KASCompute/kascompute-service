@@ -1,5 +1,6 @@
 # Rust / Cargo
 target/
+**/*.rs.bk
 Cargo.lock
 
 # Testnet launcher builds
@@ -14,8 +15,18 @@ KASComputeInstaller/
 # Frontend build
 public/dist/
 public/node_modules/
+node_modules/
 
-# Sonstiges
+# Environment / Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# System junk
 .DS_Store
 Thumbs.db
 *.tmp
+
+# Logs
+*.log
