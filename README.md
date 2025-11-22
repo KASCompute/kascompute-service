@@ -81,11 +81,11 @@ kascompute-service/
 └── public/                   # Website assets (optional)
 🔌 API Endpoints
 Health Check
-http
+
 
 GET /health
 Reward Preview
-http
+
 
 POST /reward/preview
 Content-Type: application/json
@@ -93,7 +93,7 @@ Content-Type: application/json
 { "month": 12 }
 Returns:
 
-json
+
 
 {
   "month": 12,
@@ -101,12 +101,12 @@ json
   "notes": "KCT emission preview for month 12 (start 200 KCT, 1% monthly decay over 14 years)."
 }
 Monthly Emission Curve (1 → 168)
-http
+
 
 GET /emission/monthly
 Example:
 
-json
+
 
 [
   { "month": 1, "block_reward_kct": 200.0 },
@@ -115,7 +115,7 @@ json
   { "month": 168, "block_reward_kct": 37.33 }
 ]
 Investor Value Flow (Post-Mining)
-http
+
 
 GET /investor/value_flow?fee_annual=100000&investor_pct=0.1&years=10&growth=0.1&discount=0.05
 
@@ -126,7 +126,7 @@ Rust (stable)
 Cargo
 
 Start server
-bash
+
 
 cargo run
 Dashboard available at:
@@ -138,17 +138,17 @@ http://127.0.0.1:8080/dashboard/
 🚀 Deployment (Railway)
 Build command:
 
-bash
+
 
 cargo build --release --package testnet-launcher
 Start command:
 
-bash
+
 
 ./target/release/testnet-launcher
 Dashboard embed snippet:
 
-html
+
 
 <iframe src="https://kascompute.up.railway.app/dashboard/"
         style="width: 100%; height: 100vh; border: none;">
