@@ -133,30 +133,22 @@ Start server
 cargo run
 Dashboard available at:
 
-
-
 http://127.0.0.1:8080/dashboard/
 
 🚀 Deployment (Railway)
 Build command:
 
-
-
 cargo build --release --package testnet-launcher
 Start command:
-
-
 
 ./target/release/testnet-launcher
 Dashboard embed snippet:
 
+https://kascompute-service-production.up.railway.app/dashboard/
 
 
-<iframe src="https://kascompute.up.railway.app/dashboard/"
-        style="width: 100%; height: 100vh; border: none;">
-</iframe>
+🧩 Roadmap (Public Repository Scope)  
 
-🧩 Roadmap (Public Repository Scope)
  ✅Real KCT emission model
 
  ✅Reward preview API
