@@ -30,3 +30,7 @@ Thumbs.db
 
 # Logs
 *.log
+node-identity.json
+node-config.yaml
+*.key
+*.pem
