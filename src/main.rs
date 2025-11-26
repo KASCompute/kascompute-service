@@ -52,6 +52,14 @@ struct RewardResponse {
     notes: String,
 }
 
+#[derive(Serialize)]
+struct CumulativePoint {
+    month: u32,
+    monthly_emission_kct: f64,
+    cumulative_emission_kct: f64,
+}
+
+
 #[derive(Deserialize)]
 struct InvestorQuery {
     fee_annual: f64,
@@ -96,6 +104,26 @@ async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> 
         notes,
     })
 }
+
+/// Kumulative Emissionskurve über alle 168 Monate
+async fn reward_cumulative() -> Json<Vec<CumulativePoint>> {
+    let mut points = Vec::new();
+    let mut cumulative = 0.0;
+
+    for month in 1..=TOTAL_MONTHS {
+        let monthly = monthly_emission_for_month(month);
+        cumulative += monthly;
+
+        points.push(CumulativePoint {
+            month,
+            monthly_emission_kct: monthly,
+            cumulative_emission_kct: cumulative,
+        });
+    }
+
+    Json(points)
+}
+
 
 // einfacher, aber realistischer Investor-Cashflow (KEIN „Demo“-Label)
 async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorResponse> {
@@ -166,15 +194,16 @@ async fn main() -> Result<()> {
     let static_dir = ServeDir::new("testnet-launcher/public");
 
     let app = Router::new()
-        // API-Routen
-	.route("/node/heartbeat", post(node_heartbeat))
-	.route("/health", get(health))
-        .route("/reward/preview", post(reward_preview))
-        .route("/investor/value_flow", get(investor_value_flow))
-        // Root -> Dashboard
-        .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
-        // Dashboard unter /dashboard
-        .nest_service("/dashboard", static_dir);
+    // API-Routen
+    .route("/node/heartbeat", post(node_heartbeat))
+    .route("/health", get(health))
+    .route("/reward/preview", post(reward_preview))
+    .route("/reward/cumulative", get(reward_cumulative))
+    .route("/investor/value_flow", get(investor_value_flow))
+    // Root -> Dashboard
+    .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
+    // Dashboard unter /dashboard
+    .nest_service("/dashboard", static_dir);
 
     // Port lokal (8080) oder von Railway (PORT)
     let port: u16 = std::env::var("PORT")
