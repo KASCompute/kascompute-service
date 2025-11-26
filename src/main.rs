@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use anyhow::Result;
+use axum::http::StatusCode;
+
 
 // -------------------------
 // KCT EMISSION MODEL
@@ -140,6 +142,22 @@ async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorRes
 // MAIN
 // -------------------------
 
+#[derive(Debug, Deserialize, Serialize)]
+struct NodeHeartbeat {
+    node_id: String,
+    public_key_hex: String,
+    compute_profile: String,
+}
+
+async fn node_heartbeat(Json(payload): Json<NodeHeartbeat>) -> StatusCode {
+    println!(
+        "[BACKEND] Heartbeat from node {} | pk={} | mode={}",
+        payload.node_id, payload.public_key_hex, payload.compute_profile
+    );
+    StatusCode::OK
+}
+
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -149,7 +167,8 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         // API-Routen
-        .route("/health", get(health))
+	.route("/node/heartbeat", post(node_heartbeat))
+	.route("/health", get(health))
         .route("/reward/preview", post(reward_preview))
         .route("/investor/value_flow", get(investor_value_flow))
         // Root -> Dashboard

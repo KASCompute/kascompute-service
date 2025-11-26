@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{
     convert::TryInto,
@@ -39,6 +40,13 @@ struct NodeIdentity {
     public_key_hex: String,
     /// Hex-encoded ed25519 secret key (32 bytes) – DO NOT SHARE
     secret_key_hex: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HeartbeatRequest {
+    node_id: String,
+    public_key_hex: String,
+    compute_profile: String,
 }
 
 fn ensure_config(path: &str) -> Result<NodeConfig> {
@@ -131,9 +139,36 @@ fn print_banner() {
     println!();
     println!("========================================");
     println!("      KASCompute Node Launcher v0.2");
-    println!("        (Identity + Simulation)");
+    println!("        (Identity + Heartbeats)");
     println!("========================================");
     println!();
+}
+
+fn send_heartbeat(
+    client: &Client,
+    api_base: &str,
+    cfg: &NodeConfig,
+    verify_key: &VerifyingKey,
+) -> Result<()> {
+    let url = format!("{}/node/heartbeat", api_base.trim_end_matches('/'));
+
+    let payload = HeartbeatRequest {
+        node_id: cfg.node_id.clone(),
+        public_key_hex: hex::encode(verify_key.to_bytes()),
+        compute_profile: cfg.compute_profile.clone(),
+    };
+
+    let resp = client.post(&url).json(&payload).send()?;
+
+    if !resp.status().is_success() {
+        println!(
+            "[NODE {}] Heartbeat failed with status {}",
+            cfg.node_id,
+            resp.status()
+        );
+    }
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -156,13 +191,21 @@ fn main() -> Result<()> {
     println!("  Public key (hex): {}", hex::encode(verify_key.to_bytes()));
     println!();
     println!("➜ Starting simulated node heartbeat loop...");
-    println!("  (Next step: send signed heartbeats to the network.)\n");
+    println!("  (Next step: real Proof-of-Compute.)\n");
+
+    let client = Client::new();
+    // Dein lokaler Service läuft auf 8080
+    let api_base = "http://127.0.0.1:8080";
 
     loop {
         println!(
             "[NODE {}] Heartbeat – RPC: {} | mode: {}",
             cfg.node_id, cfg.kaspa_rpc_url, cfg.compute_profile
         );
+
+        if let Err(err) = send_heartbeat(&client, api_base, &cfg, &verify_key) {
+            eprintln!("[NODE {}] Failed to send heartbeat: {:?}", cfg.node_id, err);
+        }
 
         thread::sleep(Duration::from_secs(10));
     }
