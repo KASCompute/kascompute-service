@@ -34,3 +34,7 @@ node-identity.json
 node-config.yaml
 *.key
 *.pem
+
+# KASCompute sensitive node files
+configs/node-identity.json
+configs/node-config.yaml
