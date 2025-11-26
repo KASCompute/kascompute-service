@@ -30,6 +30,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local node identity files (sicherheitskritisch!)
 node-identity.json
 node-config.yaml
 *.key
@@ -38,3 +40,6 @@ node-config.yaml
 # KASCompute sensitive node files
 configs/node-identity.json
 configs/node-config.yaml
+
+# Cargo auto backup on Windows
+*.pdb
