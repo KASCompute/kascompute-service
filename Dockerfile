@@ -3,7 +3,7 @@ FROM rust:1.75 AS builder
 WORKDIR /app
 
 # Copy manifest files
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # Pre-build for caching
