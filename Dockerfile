@@ -1,5 +1,5 @@
 # ------------ BUILDER STAGE ------------
-FROM rust:nightly AS builder
+FROM rustlang/rust:nightly-slim AS builder
 WORKDIR /app
 
 # Vollen Code kopieren
