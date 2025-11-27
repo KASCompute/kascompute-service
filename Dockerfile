@@ -1,37 +1,38 @@
-# -----------------------------------------
-# 1) Build stage mit moderner Rust-Version
-# -----------------------------------------
-FROM rust:1.75 AS builder
+# --------- Build-Stage (Rust) ----------
+# Nimm eine aktuelle Rust-Version, die edition2024 versteht
+FROM rust:latest AS builder
 
-# Arbeitsverzeichnis setzen
 WORKDIR /app
 
-# Cargo Dateien zuerst kopieren (für Dependency-Cache)
+# 1) Cargo-Dateien kopieren
 COPY Cargo.toml Cargo.lock ./
+
+# 2) Dummy main.rs für schnellen Dep-Cache
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 
-# Dependencies vorab kompilieren (Cache bleibt gültig)
+# 3) Abhängigkeiten vorbauen (Cache)
 RUN cargo build --release || true
 
-# Jetzt gesamten Code kopieren
+# 4) Jetzt den echten Code kopieren
 COPY . .
 
-# Release-Build des echten Projekts
-RUN cargo build --release
+# 5) Release-Build für DEINEN Webserver
+RUN cargo build --release --bin kascompute-service
 
-
-# -----------------------------------------
-# 2) Runtime stage - kleines, schnelles Image
-# -----------------------------------------
+# --------- Runtime-Stage (klein, ohne Rust-Toolchain) ----------
 FROM debian:bullseye-slim
+
 WORKDIR /app
 
-# Das fertige Rust-Binary aus dem Builder holen
+# benötigte libs für Rust-Binary
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# fertiges Binary aus dem Builder holen
 COPY --from=builder /app/target/release/kascompute-service /app/kascompute-service
 
-# Railway nutzt automatisch den $PORT Env-Var
+# Port (Railway setzt $PORT) – dein Code liest PORT env
 ENV PORT=8080
 EXPOSE 8080
 
-# Start-Befehl
+# Start-Kommando
 CMD ["/app/kascompute-service"]
