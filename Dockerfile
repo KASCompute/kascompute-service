@@ -1,26 +1,31 @@
-# ------------ BUILDER STAGE ------------
+# ==== BUILDER STAGE ====
 FROM rustlang/rust:nightly-slim AS builder
+
 WORKDIR /app
 
-# Vollen Code kopieren
+# Install OpenSSL and pkg-config for Rust crates that need them
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    build-essential
+
 COPY . .
 
-# Falls ein moderner Cargo.lock Probleme macht: einfach im Container löschen
 RUN rm -f Cargo.lock || true
 
-# Release-Build deines Services
 RUN cargo build --release
 
-# ------------ RUNTIME STAGE ------------
+
+# ==== RUNTIME STAGE ====
 FROM debian:bullseye-slim
+
 WORKDIR /app
 
-# Minimale System-Pakete
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Binary rüberkopieren (Name muss zu deinem Package passen!)
 COPY --from=builder /app/target/release/kascompute-service /app/kascompute-service
 
 ENV PORT=8080
