@@ -13,6 +13,7 @@ tower-http = { version = "0.5.2", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 anyhow = "1.0"
+base64ct = "1.7.0"
 
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
