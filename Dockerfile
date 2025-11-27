@@ -1,29 +1,26 @@
-# BUILDER IMAGE
+# ------------ BUILDER STAGE ------------
 FROM rust:1.75 AS builder
 WORKDIR /app
 
-# Copy manifest files
-COPY Cargo.toml ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-
-# Pre-build for caching
-RUN cargo build --release || true
-
-# Copy full source
+# Vollen Code kopieren
 COPY . .
 
-# Build your real binary
+# Falls ein moderner Cargo.lock Probleme macht: einfach im Container löschen
+RUN rm -f Cargo.lock || true
+
+# Release-Build deines Services
 RUN cargo build --release
 
-# RUNTIME IMAGE
+# ------------ RUNTIME STAGE ------------
 FROM debian:bullseye-slim
 WORKDIR /app
 
-# Install required system libraries (important!)
+# Minimale System-Pakete
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Binary rüberkopieren (Name muss zu deinem Package passen!)
 COPY --from=builder /app/target/release/kascompute-service /app/kascompute-service
 
 ENV PORT=8080
