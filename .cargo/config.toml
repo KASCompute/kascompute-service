@@ -1,0 +1,5 @@
+[build]
+rustc-wrapper = ""
+
+[env]
+RUSTUP_TOOLCHAIN = "nightly"
