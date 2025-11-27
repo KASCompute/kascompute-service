@@ -1,5 +1,5 @@
 # ------------ BUILDER STAGE ------------
-FROM rust:1.75 AS builder
+FROM rust:nightly AS builder
 WORKDIR /app
 
 # Vollen Code kopieren
