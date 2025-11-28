@@ -749,7 +749,6 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64ct",
  "ed25519-dalek",
  "hex",
  "rand",
