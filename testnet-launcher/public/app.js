@@ -135,7 +135,7 @@ function updateCurrencyButtons() {
   const btnEur = document.getElementById("btn-cur-eur");
   const btnUsd = document.getElementById("btn-cur-usd");
   if (!btnKct || !btnEur || !btnUsd) return;
-  
+
   btnKct.classList.toggle("pill-active", currentCurrency === "KCT");
   btnEur.classList.toggle("pill-active", currentCurrency === "EUR");
   btnUsd.classList.toggle("pill-active", currentCurrency === "USD");
@@ -390,7 +390,7 @@ async function handleInvestorClick() {
   const growth = Number(growthEl.value || 0);
   const discount = Number(discEl.value || 0);
 
-  // slider labels
+  // Slider-Labels updaten
   document.getElementById("investor-label").textContent = investor_pct.toFixed(2);
   document.getElementById("years-label").textContent = years.toFixed(0);
   document.getElementById("growth-label").textContent = growth.toFixed(2);
@@ -409,7 +409,31 @@ async function handleInvestorClick() {
 
     const res = await fetch(url.toString());
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+
+    let data = await res.json();
+
+    // 🔥 Fallback: neue Rust-API liefert nur Emissionen
+    if (
+      typeof data.years === "undefined" &&
+      typeof data.t_years === "undefined" &&
+      typeof data.gross_sum === "undefined" &&
+      typeof data.total_emission_14y_kct !== "undefined"
+    ) {
+      const gross = Number(data.total_emission_14y_kct || 0);   // nutze Emission als "Gross"
+      const invSum = gross * investor_pct;                      // Anteil an Investor
+      const npv = invSum * (1 - discount);                      // grober NPV
+      const apy = growth || 0.08;                               // grobe APY-Schätzung
+
+      data = {
+        ...data,
+        years: years,
+        gross_sum: gross,
+        investor_sum: invSum,
+        npv_investor: npv,
+        apy_estimate: apy,
+      };
+    }
+
     lastInvestorData = data;
 
     jsonBox.textContent = JSON.stringify(data, null, 2);
@@ -422,6 +446,7 @@ async function handleInvestorClick() {
     rebuildInvestorChart(null);
   }
 }
+
 
 // Investor presets
 function applyInvestorPreset(preset) {
@@ -731,46 +756,47 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-function shortPk(pk) {
-  if (!pk) return "";
-  if (pk.length <= 14) return pk;
-  return pk.slice(0, 8) + "…" + pk.slice(-6);
-}
-
-function timeAgoFromUnix(unixSeconds) {
-  if (!unixSeconds) return "unknown";
-  const now = Date.now() / 1000;
-  let diff = Math.max(0, Math.round(now - unixSeconds));
-
-  if (diff < 10) return "just now";
-  if (diff < 60) return diff + "s ago";
-  const mins = Math.round(diff / 60);
-  if (mins < 60) return mins + " min ago";
-  const hours = Math.round(mins / 60);
-  return hours + " h ago";
-}
-
-function renderNodes(nodes) {
-  const countEl = document.getElementById("node-count");
-  const listEl = document.getElementById("node-list");
-  if (!countEl || !listEl) return;
-
-  if (!nodes || nodes.length === 0) {
-    countEl.textContent = "0";
-    listEl.innerHTML = `<li class="node-empty">No nodes online yet.</li>`;
-    return;
+  // ---------- ACTIVE NODES (dein alter Code) ----------
+  function shortPk(pk) {
+    if (!pk) return "";
+    if (pk.length <= 14) return pk;
+    return pk.slice(0, 8) + "…" + pk.slice(-6);
   }
 
-  countEl.textContent = String(nodes.length);
+  function timeAgoFromUnix(unixSeconds) {
+    if (!unixSeconds) return "unknown";
+    const now = Date.now() / 1000;
+    let diff = Math.max(0, Math.round(now - unixSeconds));
 
-  listEl.innerHTML = nodes
-    .map((n) => {
-      const lastSeen = timeAgoFromUnix(n.last_seen_unix);
-      const pkShort = shortPk(n.public_key_hex);
-      const profile = n.compute_profile || "unknown";
-      const score = n.compute_score ?? 0;
+    if (diff < 10) return "just now";
+    if (diff < 60) return diff + "s ago";
+    const mins = Math.round(diff / 60);
+    if (mins < 60) return mins + " min ago";
+    const hours = Math.round(mins / 60);
+    return hours + " h ago";
+  }
 
-      return `
+  function renderNodes(nodes) {
+    const countEl = document.getElementById("node-count");
+    const listEl = document.getElementById("node-list");
+    if (!countEl || !listEl) return;
+
+    if (!nodes || nodes.length === 0) {
+      countEl.textContent = "0";
+      listEl.innerHTML = `<li class="node-empty">No nodes online yet.</li>`;
+      return;
+    }
+
+    countEl.textContent = String(nodes.length);
+
+    listEl.innerHTML = nodes
+      .map((n) => {
+        const lastSeen = timeAgoFromUnix(n.last_seen_unix);
+        const pkShort = shortPk(n.public_key_hex);
+        const profile = n.compute_profile || "unknown";
+        const score = n.compute_score ?? 0;
+
+        return `
         <li class="node-item">
           <div class="node-id">${n.node_id}</div>
           <div class="node-meta">
@@ -781,33 +807,84 @@ function renderNodes(nodes) {
           </div>
         </li>
       `;
-    })
-    .join("");
-}
-
-async function fetchNodes() {
-  const listEl = document.getElementById("node-list");
-  if (listEl) {
-    listEl.classList.add("loading");
+      })
+      .join("");
   }
 
-  try {
-    const res = await fetch(`${BASE}/nodes`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    renderNodes(data);
-  } catch (err) {
-    console.error("Failed to fetch nodes", err);
+  async function fetchNodes() {
+    const listEl = document.getElementById("node-list");
     if (listEl) {
-      listEl.innerHTML = `<li class="node-empty">Could not load nodes.</li>`;
+      listEl.classList.add("loading");
     }
-  } finally {
-    if (listEl) {
-      listEl.classList.remove("loading");
+
+    try {
+      const res = await fetch(`${BASE}/nodes`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      renderNodes(data);
+    } catch (err) {
+      console.error("Failed to fetch nodes", err);
+      if (listEl) {
+        listEl.innerHTML = `<li class="node-empty">Could not load nodes.</li>`;
+      }
+    } finally {
+      if (listEl) {
+        listEl.classList.remove("loading");
+      }
     }
   }
-}
 
+  // ---------- PROOF-OF-COMPUTE FEED (neu) ----------
+  function renderProofs(proofs) {
+    const tbody = document.getElementById("proofs-body");
+    if (!tbody) return;
+
+    if (!proofs || proofs.length === 0) {
+      tbody.innerHTML = `
+        <tr class="poc-empty-row">
+          <td colspan="5">No proofs yet.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = "";
+
+    proofs.forEach((p) => {
+      const tr = document.createElement("tr");
+      const date = new Date(p.timestamp * 1000);
+      const ts = date.toLocaleString();
+
+      tr.innerHTML = `
+        <td>${p.node_id}</td>
+        <td>${p.job_id}</td>
+        <td>${(p.work_units ?? 0).toLocaleString()}</td>
+        <td>${(p.estimated_reward_kct ?? 0).toFixed(6)}</td>
+        <td>${ts}</td>
+      `;
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function fetchProofs() {
+    const tbody = document.getElementById("proofs-body");
+    try {
+      const res = await fetch(`${BASE}/api/stats/proofs`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      renderProofs(data);
+    } catch (err) {
+      console.error("Failed to fetch proofs", err);
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr class="poc-empty-row">
+            <td colspan="5">Could not load proofs.</td>
+          </tr>
+        `;
+      }
+    }
+  }
 
   // Lang & Currency
   updateLangButtons();
@@ -922,7 +999,7 @@ async function fetchNodes() {
     .getElementById("btn-treasury-preset")
     ?.addEventListener("click", applyTreasuryPreset);
 
-   // JSON toggles
+  // JSON toggles
   setupJsonToggle("btn-reward-json", "reward-json");
   setupJsonToggle("btn-investor-json", "investor-json");
 
@@ -950,5 +1027,8 @@ async function fetchNodes() {
       fetchNodes();
     });
   }
-});
 
+  // Proof-of-Compute feed
+  fetchProofs();
+  setInterval(fetchProofs, 5000);
+});

@@ -242,30 +242,23 @@ fn cpu_workload(iterations: u64) -> (u64, String) {
     (iterations, hex::encode(result))
 }
 
-/// Simulierter AMD-GPU-Workload: mehr parallele „Arbeit“ → mehr work_units.
-/// Später können wir hier echte ROCm/OpenCL-Calls einbauen.
-fn amd_gpu_workload(iterations: u64) -> (u64, String) {
-    // Wir tun so, als ob AMD sehr effizient viele Threads hat:
-    // einfach mehr Iterationen für jetzt
-    cpu_workload(iterations * 8)
+/// Simulierter AMD-GPU-Workload: deutlich mehr "Arbeit" = mehr work_units.
+/// Später können wir hier echten OpenCL/ROCm-Code einsetzen.
+fn amd_gpu_workload(base_iterations: u64) -> (u64, String) {
+    // AMD bekommt theoretisch viel Parallelität → wir simulieren das
+    cpu_workload(base_iterations * 8)
 }
 
 /// Simulierter NVIDIA-GPU-Workload (Platzhalter)
-fn nvidia_gpu_workload(iterations: u64) -> (u64, String) {
-    cpu_workload(iterations * 6)
+fn nvidia_gpu_workload(base_iterations: u64) -> (u64, String) {
+    cpu_workload(base_iterations * 6)
 }
 
 /// Kombiniert CPU + GPU
-fn mixed_workload(profile: &str) -> (u64, String) {
+fn mixed_workload() -> (u64, String) {
     let (cpu_units, cpu_hash) = cpu_workload(50_000);
+    let (gpu_units, gpu_hash) = amd_gpu_workload(20_000);
 
-    let (gpu_units, gpu_hash) = match profile {
-        "gpu-amd" => amd_gpu_workload(20_000),
-        "gpu-nvidia" => nvidia_gpu_workload(20_000),
-        _ => cpu_workload(20_000),
-    };
-
-    // Hashes kombinieren
     let mut hasher = Sha256::new();
     hasher.update(cpu_hash.as_bytes());
     hasher.update(gpu_hash.as_bytes());
@@ -290,11 +283,10 @@ fn run_workload_for_profile(compute_profile: &str) -> (u64, String, String) {
             (units, hash, "gpu-nvidia".to_string())
         }
         "mixed" => {
-            let (units, hash) = mixed_workload("gpu-amd");
+            let (units, hash) = mixed_workload();
             (units, hash, "mixed".to_string())
         }
         other => {
-            // Fallback
             let (units, hash) = cpu_workload(50_000);
             println!(
                 "[NODE] Unknown compute_profile='{}', falling back to CPU workload.",

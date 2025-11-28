@@ -223,12 +223,43 @@
         <div class="stat-label">Online</div>
         <div id="node-count" class="stat-value">0</div>
       </div>
-      <button id="btn-refresh-nodes" class="pill-btn">Refresh</button>
+    <button id="btn-refresh-nodes" class="pill-btn">Refresh</button>
+
     </div>
 
     <ul id="node-list" class="node-list">
       <li class="node-empty">Waiting for heartbeats…</li>
     </ul>
+  </section>
+  
+<!-- PROOF OF COMPUTE FEED -->
+  <section class="card">
+    <div class="card-header">
+      <h2>
+        <span class="card-icon">🧮</span>
+        Proof-of-Compute
+      </h2>
+      <p class="card-subtitle">
+        Live feed of validated Proof-of-Compute submissions from your nodes.
+      </p>
+    </div>
+
+    <table class="poc-table">
+      <thead>
+        <tr>
+          <th>Node</th>
+          <th>Job</th>
+          <th>Work Units</th>
+          <th>Reward ≈ KCT</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody id="proofs-body">
+        <tr class="poc-empty-row">
+          <td colspan="5">Waiting for proofs…</td>
+        </tr>
+      </tbody>
+    </table>
   </section>
 
 </main>

@@ -1,14 +1,13 @@
 use axum::{
     Json,
-    routing::post,
+    routing::{post, get},
     Router,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use axum::http::StatusCode;
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
-use hex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// GLOBAL STORAGE (später DB)
@@ -53,6 +52,30 @@ pub fn registry() -> &'static NodeRegistry {
     }
 }
 
+/// -------------------------------------
+/// STORED PROOFS (für Dashboard)
+/// -------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StoredProof {
+    pub node_id: String,
+    pub job_id: String,
+    pub work_units: u64,
+    pub estimated_reward_kct: f64,
+    pub timestamp: u64,
+}
+
+// globaler Speicher für die letzten Proofs (z.B. max. 100)
+static mut PROOFS: Option<Arc<Mutex<VecDeque<StoredProof>>>> = None;
+
+fn proofs_store() -> &'static Arc<Mutex<VecDeque<StoredProof>>> {
+    unsafe {
+        if PROOFS.is_none() {
+            PROOFS = Some(Arc::new(Mutex::new(VecDeque::new())));
+        }
+        PROOFS.as_ref().unwrap()
+    }
+}
 
 /// REQUEST/RESPONSE MODELS
 /// -------------------------------------
@@ -87,7 +110,6 @@ pub struct ProofOfComputeResponse {
     pub timestamp: u64,
 }
 
-
 /// -------------------------------------
 /// NODE REGISTER
 /// -------------------------------------
@@ -112,7 +134,6 @@ async fn register_node(
         message: "Node registered (testnet) – public key will be added on first heartbeat".into(),
     })
 }
-
 
 /// -------------------------------------
 /// SIGNATURE VERIFICATION
@@ -252,6 +273,23 @@ async fn submit_proof(
     // Reward Calculation (DEMO)
     let reward = (req.work_units as f64 / 10000.0) * 0.001;
 
+    // -------- Proof im Speicher für Dashboard ablegen --------
+    {
+        let store = proofs_store();
+        let mut guard = store.lock().unwrap();
+        guard.push_front(StoredProof {
+            node_id: req.node_id.clone(),
+            job_id: req.job_id.clone(),
+            work_units: req.work_units,
+            estimated_reward_kct: reward,
+            timestamp: now,
+        });
+        // nur die letzten 100 behalten
+        if guard.len() > 100 {
+            guard.pop_back();
+        }
+    }
+
     (
         StatusCode::OK,
         Json(ProofOfComputeResponse {
@@ -263,6 +301,15 @@ async fn submit_proof(
     )
 }
 
+/// -------------------------------------
+/// LIST PROOFS (für Dashboard/API)
+/// -------------------------------------
+async fn list_proofs() -> Json<Vec<StoredProof>> {
+    let store = proofs_store();
+    let guard = store.lock().unwrap();
+    // als Vec zurück geben (z.B. für Dashboard JS)
+    Json(guard.iter().cloned().collect())
+}
 
 /// PUBLIC ROUTER EXPORT
 /// -------------------------------------
@@ -270,4 +317,5 @@ pub fn router() -> Router {
     Router::new()
         .route("/api/nodes/register", post(register_node))
         .route("/api/proof-of-compute", post(submit_proof))
+        .route("/api/stats/proofs", get(list_proofs)) // neu für Dashboard
 }
