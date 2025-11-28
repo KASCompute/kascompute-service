@@ -4,6 +4,7 @@ use ed25519_dalek::Signer;
 use rand::rngs::OsRng;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     convert::TryInto,
     fs,
@@ -18,7 +19,7 @@ struct NodeConfig {
     node_id: String,
     /// Kaspa RPC endpoint (later real Kaspa node)
     kaspa_rpc_url: String,
-    /// CPU, GPU or mixed
+    /// "cpu", "gpu-amd", "gpu-nvidia", "mixed"
     compute_profile: String,
     /// Optional: dashboard URL
     dashboard_url: String,
@@ -52,6 +53,31 @@ struct HeartbeatRequest {
     signature_hex: String,
 }
 
+// ---------- Proof-of-Compute Payloads ----------
+
+#[derive(Debug, Serialize)]
+struct ProofOfComputeRequest {
+    job_id: String,
+    node_id: String,
+    result_hash: String,
+    work_units: u64,
+    timestamp_unix: u64,
+    /// wird im Backend als `signature`-Feld erwartet
+    signature: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProofOfComputeResponse {
+    accepted: bool,
+    message: String,
+    estimated_reward_kct: f64,
+    timestamp: u64,
+}
+
+// ================================================================
+// CONFIG & IDENTITY
+// ================================================================
+
 fn ensure_config(path: &str) -> Result<NodeConfig> {
     let cfg_path = Path::new(path);
 
@@ -73,8 +99,8 @@ fn ensure_config(path: &str) -> Result<NodeConfig> {
 
     let contents = fs::read_to_string(cfg_path)
         .with_context(|| format!("Could not read node config from {}", path))?;
-    let cfg: NodeConfig = serde_yaml::from_str(&contents)
-        .with_context(|| format!("Invalid YAML in {}", path))?;
+    let cfg: NodeConfig =
+        serde_yaml::from_str(&contents).with_context(|| format!("Invalid YAML in {}", path))?;
     Ok(cfg)
 }
 
@@ -117,8 +143,8 @@ fn ensure_identity(path: &str) -> Result<(SigningKey, VerifyingKey)> {
     let identity: NodeIdentity = serde_json::from_str(&data)
         .with_context(|| format!("Invalid JSON in identity file {}", path))?;
 
-    let sk_bytes = hex::decode(identity.secret_key_hex.clone())
-        .map_err(|e| anyhow!("Invalid secret key hex: {e}"))?;
+    let sk_bytes =
+        hex::decode(identity.secret_key_hex.clone()).map_err(|e| anyhow!("Invalid secret key hex: {e}"))?;
 
     if sk_bytes.len() != 32 {
         return Err(anyhow!(
@@ -138,14 +164,26 @@ fn ensure_identity(path: &str) -> Result<(SigningKey, VerifyingKey)> {
     Ok((signing_key, verify_key))
 }
 
+// ================================================================
+// BANNER & BASE-URL
+// ================================================================
+
 fn print_banner() {
     println!();
     println!("========================================");
-    println!("      KASCompute Node Launcher v0.3");
-    println!("        (Signed Heartbeats + Score)");
+    println!("      KASCompute Node Launcher v0.4");
+    println!("  (Signed Heartbeats + Proof-of-Compute)");
     println!("========================================");
     println!();
 }
+
+fn api_base_url() -> String {
+    std::env::var("KASCOMPUTE_API").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string())
+}
+
+// ================================================================
+// HEARTBEAT
+// ================================================================
 
 fn send_heartbeat(
     client: &Client,
@@ -183,13 +221,152 @@ fn send_heartbeat(
         );
     } else {
         println!(
-            "[NODE {}] Signed heartbeat OK (ts={}, score +1)",
+            "[NODE {}] Signed heartbeat OK (ts={})",
             cfg.node_id, ts
         );
     }
 
     Ok(())
 }
+
+// ================================================================
+// PROOF-OF-COMPUTE ENGINE (CPU / AMD / NVIDIA / MIXED)
+// ================================================================
+
+fn cpu_workload(iterations: u64) -> (u64, String) {
+    let mut hasher = Sha256::new();
+    for i in 0..iterations {
+        hasher.update(i.to_le_bytes());
+    }
+    let result = hasher.finalize();
+    (iterations, hex::encode(result))
+}
+
+/// Simulierter AMD-GPU-Workload: mehr parallele „Arbeit“ → mehr work_units.
+/// Später können wir hier echte ROCm/OpenCL-Calls einbauen.
+fn amd_gpu_workload(iterations: u64) -> (u64, String) {
+    // Wir tun so, als ob AMD sehr effizient viele Threads hat:
+    // einfach mehr Iterationen für jetzt
+    cpu_workload(iterations * 8)
+}
+
+/// Simulierter NVIDIA-GPU-Workload (Platzhalter)
+fn nvidia_gpu_workload(iterations: u64) -> (u64, String) {
+    cpu_workload(iterations * 6)
+}
+
+/// Kombiniert CPU + GPU
+fn mixed_workload(profile: &str) -> (u64, String) {
+    let (cpu_units, cpu_hash) = cpu_workload(50_000);
+
+    let (gpu_units, gpu_hash) = match profile {
+        "gpu-amd" => amd_gpu_workload(20_000),
+        "gpu-nvidia" => nvidia_gpu_workload(20_000),
+        _ => cpu_workload(20_000),
+    };
+
+    // Hashes kombinieren
+    let mut hasher = Sha256::new();
+    hasher.update(cpu_hash.as_bytes());
+    hasher.update(gpu_hash.as_bytes());
+    let final_hash = hasher.finalize();
+
+    (cpu_units + gpu_units, hex::encode(final_hash))
+}
+
+/// Wählt Workload abhängig vom compute_profile
+fn run_workload_for_profile(compute_profile: &str) -> (u64, String, String) {
+    match compute_profile {
+        "cpu" => {
+            let (units, hash) = cpu_workload(100_000);
+            (units, hash, "cpu".to_string())
+        }
+        "gpu-amd" => {
+            let (units, hash) = amd_gpu_workload(40_000);
+            (units, hash, "gpu-amd".to_string())
+        }
+        "gpu-nvidia" => {
+            let (units, hash) = nvidia_gpu_workload(40_000);
+            (units, hash, "gpu-nvidia".to_string())
+        }
+        "mixed" => {
+            let (units, hash) = mixed_workload("gpu-amd");
+            (units, hash, "mixed".to_string())
+        }
+        other => {
+            // Fallback
+            let (units, hash) = cpu_workload(50_000);
+            println!(
+                "[NODE] Unknown compute_profile='{}', falling back to CPU workload.",
+                other
+            );
+            (units, hash, "cpu(fallback)".to_string())
+        }
+    }
+}
+
+fn send_proof_of_compute(
+    client: &Client,
+    api_base: &str,
+    cfg: &NodeConfig,
+    signing_key: &SigningKey,
+) -> Result<()> {
+    let url = format!("{}/api/proof-of-compute", api_base.trim_end_matches('/'));
+
+    let (work_units, result_hash, profile_used) =
+        run_workload_for_profile(&cfg.compute_profile);
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_secs();
+
+    let job_id = "demo-job-1";
+
+    // Message für Signatur
+    let msg = format!(
+        "{}|{}|{}|{}",
+        job_id, result_hash, work_units, ts
+    );
+    let sig = signing_key.sign(msg.as_bytes());
+    let sig_hex = hex::encode(sig.to_bytes());
+
+    let payload = ProofOfComputeRequest {
+        job_id: job_id.to_string(),
+        node_id: cfg.node_id.clone(),
+        result_hash,
+        work_units,
+        timestamp_unix: ts,
+        signature: sig_hex,
+    };
+
+    println!(
+        "[NODE {}] PoC → profile={} work_units={} ...",
+        cfg.node_id, profile_used, payload.work_units
+    );
+
+    let resp = client.post(&url).json(&payload).send()?;
+
+    if !resp.status().is_success() {
+        println!(
+            "[NODE {}] Proof-of-Compute failed with status {}",
+            cfg.node_id,
+            resp.status()
+        );
+        return Ok(());
+    }
+
+    let body: ProofOfComputeResponse = resp.json()?;
+    println!(
+        "[NODE {}] PoC accepted={} reward≈{} KCT message='{}'",
+        cfg.node_id, body.accepted, body.estimated_reward_kct, body.message
+    );
+
+    Ok(())
+}
+
+// ================================================================
+// MAIN LOOP
+// ================================================================
 
 fn main() -> Result<()> {
     print_banner();
@@ -210,11 +387,14 @@ fn main() -> Result<()> {
     println!("Loaded node identity:");
     println!("  Public key (hex): {}", hex::encode(verify_key.to_bytes()));
     println!();
-    println!("➜ Starting simulated node heartbeat loop...");
-    println!("  (Next step: real Proof-of-Compute.)\n");
+    println!("➜ Starting simulated node heartbeat + PoC loop...");
+    println!("  Backend API base: {}", api_base_url());
+    println!("  (AMD/NVIDIA/Mixed via compute_profile)\n");
 
     let client = Client::new();
-    let api_base = "https://kascompute-testnet.onrender.com";
+    let api_base = api_base_url();
+
+    let mut counter: u64 = 0;
 
     loop {
         println!(
@@ -223,11 +403,24 @@ fn main() -> Result<()> {
         );
 
         if let Err(err) =
-            send_heartbeat(&client, api_base, &cfg, &signing_key, &verify_key)
+            send_heartbeat(&client, &api_base, &cfg, &signing_key, &verify_key)
         {
             eprintln!("[NODE {}] Failed to send heartbeat: {:?}", cfg.node_id, err);
         }
 
+        // Alle 6 Zyklen (60 Sekunden, weil unten 10s Sleep) → Proof-of-Compute
+        if counter % 6 == 0 {
+            if let Err(err) =
+                send_proof_of_compute(&client, &api_base, &cfg, &signing_key)
+            {
+                eprintln!(
+                    "[NODE {}] Failed to send proof-of-compute: {:?}",
+                    cfg.node_id, err
+                );
+            }
+        }
+
+        counter += 1;
         thread::sleep(Duration::from_secs(10));
     }
 }

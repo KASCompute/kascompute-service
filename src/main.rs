@@ -11,6 +11,9 @@ use tower_http::services::ServeDir;
 use anyhow::Result;
 use axum::http::StatusCode;
 
+// Neues Modul für Proof-of-Compute
+mod proof_of_compute;
+
 // -------------------------
 // KCT EMISSION MODEL
 // -------------------------
@@ -157,6 +160,10 @@ async fn node_heartbeat(Json(payload): Json<NodeHeartbeat>) -> StatusCode {
         "[BACKEND] Heartbeat from node {} | pk={} | mode={}",
         payload.node_id, payload.public_key_hex, payload.compute_profile
     );
+
+    // Node-Pubkey in Registry speichern, damit PoC ihn findet
+    crate::proof_of_compute::registry().insert(&payload.node_id, &payload.public_key_hex);
+
     StatusCode::OK
 }
 
@@ -173,9 +180,14 @@ async fn main() -> Result<()> {
         // API-Routen
         .route("/health", get(health))
         .route("/node/heartbeat", post(node_heartbeat))
-        .route("/reward/preview",get(reward_preview_get).post(reward_preview),)
+        .route(
+            "/reward/preview",
+            get(reward_preview_get).post(reward_preview),
+        )
         .route("/reward/cumulative", get(reward_cumulative))
         .route("/investor/value_flow", get(investor_value_flow))
+        // Proof-of-Compute API
+        .merge(proof_of_compute::router())
         // Root -> Dashboard
         .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
         // Dashboard unter /dashboard
