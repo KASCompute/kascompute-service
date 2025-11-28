@@ -731,6 +731,84 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+function shortPk(pk) {
+  if (!pk) return "";
+  if (pk.length <= 14) return pk;
+  return pk.slice(0, 8) + "…" + pk.slice(-6);
+}
+
+function timeAgoFromUnix(unixSeconds) {
+  if (!unixSeconds) return "unknown";
+  const now = Date.now() / 1000;
+  let diff = Math.max(0, Math.round(now - unixSeconds));
+
+  if (diff < 10) return "just now";
+  if (diff < 60) return diff + "s ago";
+  const mins = Math.round(diff / 60);
+  if (mins < 60) return mins + " min ago";
+  const hours = Math.round(mins / 60);
+  return hours + " h ago";
+}
+
+function renderNodes(nodes) {
+  const countEl = document.getElementById("node-count");
+  const listEl = document.getElementById("node-list");
+  if (!countEl || !listEl) return;
+
+  if (!nodes || nodes.length === 0) {
+    countEl.textContent = "0";
+    listEl.innerHTML = `<li class="node-empty">No nodes online yet.</li>`;
+    return;
+  }
+
+  countEl.textContent = String(nodes.length);
+
+  listEl.innerHTML = nodes
+    .map((n) => {
+      const lastSeen = timeAgoFromUnix(n.last_seen_unix);
+      const pkShort = shortPk(n.public_key_hex);
+      const profile = n.compute_profile || "unknown";
+      const score = n.compute_score ?? 0;
+
+      return `
+        <li class="node-item">
+          <div class="node-id">${n.node_id}</div>
+          <div class="node-meta">
+            <span>${profile}</span>
+            <span>${pkShort}</span>
+            <span>score: ${score}</span>
+            <span>last seen: ${lastSeen}</span>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+async function fetchNodes() {
+  const listEl = document.getElementById("node-list");
+  if (listEl) {
+    listEl.classList.add("loading");
+  }
+
+  try {
+    const res = await fetch(`${BASE}/nodes`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderNodes(data);
+  } catch (err) {
+    console.error("Failed to fetch nodes", err);
+    if (listEl) {
+      listEl.innerHTML = `<li class="node-empty">Could not load nodes.</li>`;
+    }
+  } finally {
+    if (listEl) {
+      listEl.classList.remove("loading");
+    }
+  }
+}
+
+
   // Lang & Currency
   updateLangButtons();
   updateCurrencyButtons();
@@ -844,7 +922,7 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("btn-treasury-preset")
     ?.addEventListener("click", applyTreasuryPreset);
 
-  // JSON toggles
+   // JSON toggles
   setupJsonToggle("btn-reward-json", "reward-json");
   setupJsonToggle("btn-investor-json", "investor-json");
 
@@ -860,4 +938,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // API health
   checkApiHealth();
   setInterval(checkApiHealth, 30000);
+
+  // Active nodes panel
+  fetchNodes();
+  setInterval(fetchNodes, 10000);
+
+  const btnRefreshNodes = document.getElementById("btn-refresh-nodes");
+  if (btnRefreshNodes) {
+    btnRefreshNodes.addEventListener("click", (e) => {
+      e.preventDefault();
+      fetchNodes();
+    });
+  }
 });
+

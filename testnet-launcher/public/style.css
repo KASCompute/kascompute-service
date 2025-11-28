@@ -442,3 +442,40 @@ canvas {
     padding: 18px;
   }
 }
+
+/* Active Nodes panel */
+.node-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.node-item {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.node-id {
+  font-weight: 600;
+}
+
+.node-meta {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.node-empty {
+  opacity: 0.7;
+  font-size: 0.85rem;
+}

@@ -189,7 +189,7 @@
         Cliff:
         <span id="treasury-cliff-label" class="field-badge">0</span> months
       </label>
-      <input id="treasury-cliff" type="range" min="0" max="24" step="1" value="0" />
+        <input id="treasury-cliff" type="range" min="0" max="24" step="1" value="0" />
     </div>
 
     <button id="btn-treasury" class="action-btn">Simulate Treasury Vesting</button>
@@ -204,6 +204,31 @@
     <div class="summary-actions">
       <button id="btn-treasury-copy" class="json-btn secondary-btn">Copy summary</button>
     </div>
+  </section>
+
+  <!-- ACTIVE NODES PANEL -->
+  <section class="card">
+    <div class="card-header">
+      <h2>
+        <span class="card-icon">🛰️</span>
+        Active Nodes
+      </h2>
+      <p class="card-subtitle">
+        Live list of nodes connected to the KASCompute testnet.
+      </p>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat">
+        <div class="stat-label">Online</div>
+        <div id="node-count" class="stat-value">0</div>
+      </div>
+      <button id="btn-refresh-nodes" class="pill-btn">Refresh</button>
+    </div>
+
+    <ul id="node-list" class="node-list">
+      <li class="node-empty">Waiting for heartbeats…</li>
+    </ul>
   </section>
 
 </main>

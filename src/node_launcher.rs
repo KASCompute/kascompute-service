@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::{SigningKey, VerifyingKey, Signer};
 use rand::rngs::OsRng;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use std::{
     fs,
     path::Path,
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,6 +47,8 @@ struct HeartbeatRequest {
     node_id: String,
     public_key_hex: String,
     compute_profile: String,
+    timestamp_unix: u64,
+    signature_hex: String,
 }
 
 fn ensure_config(path: &str) -> Result<NodeConfig> {
@@ -138,8 +140,8 @@ fn ensure_identity(path: &str) -> Result<(SigningKey, VerifyingKey)> {
 fn print_banner() {
     println!();
     println!("========================================");
-    println!("      KASCompute Node Launcher v0.2");
-    println!("        (Identity + Heartbeats)");
+    println!("      KASCompute Node Launcher v0.3");
+    println!("        (Signed Heartbeats + Score)");
     println!("========================================");
     println!();
 }
@@ -148,14 +150,26 @@ fn send_heartbeat(
     client: &Client,
     api_base: &str,
     cfg: &NodeConfig,
+    signing_key: &SigningKey,
     verify_key: &VerifyingKey,
 ) -> Result<()> {
     let url = format!("{}/node/heartbeat", api_base.trim_end_matches('/'));
+
+    // Timestamp + Nachricht bauen
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_secs();
+    let msg = format!("{}|{}|{}", cfg.node_id, cfg.compute_profile, ts);
+
+    // Signieren
+    let sig = signing_key.sign(msg.as_bytes());
 
     let payload = HeartbeatRequest {
         node_id: cfg.node_id.clone(),
         public_key_hex: hex::encode(verify_key.to_bytes()),
         compute_profile: cfg.compute_profile.clone(),
+        timestamp_unix: ts,
+        signature_hex: hex::encode(sig.to_bytes()),
     };
 
     let resp = client.post(&url).json(&payload).send()?;
@@ -165,6 +179,11 @@ fn send_heartbeat(
             "[NODE {}] Heartbeat failed with status {}",
             cfg.node_id,
             resp.status()
+        );
+    } else {
+        println!(
+            "[NODE {}] Signed heartbeat OK (ts={}, score +1)",
+            cfg.node_id, ts
         );
     }
 
@@ -178,7 +197,7 @@ fn main() -> Result<()> {
     let identity_path = "configs/node-identity.json";
 
     let cfg = ensure_config(config_path)?;
-    let (_signing_key, verify_key) = ensure_identity(identity_path)?;
+    let (signing_key, verify_key) = ensure_identity(identity_path)?;
 
     println!("Loaded node config:");
     println!("  Node ID        : {}", cfg.node_id);
@@ -194,7 +213,6 @@ fn main() -> Result<()> {
     println!("  (Next step: real Proof-of-Compute.)\n");
 
     let client = Client::new();
-    // Dein lokaler Service läuft auf 8080
     let api_base = "http://127.0.0.1:8080";
 
     loop {
@@ -203,7 +221,7 @@ fn main() -> Result<()> {
             cfg.node_id, cfg.kaspa_rpc_url, cfg.compute_profile
         );
 
-        if let Err(err) = send_heartbeat(&client, api_base, &cfg, &verify_key) {
+        if let Err(err) = send_heartbeat(&client, api_base, &cfg, &signing_key, &verify_key) {
             eprintln!("[NODE {}] Failed to send heartbeat: {:?}", cfg.node_id, err);
         }
 
