@@ -214,7 +214,7 @@ fn main() -> Result<()> {
     println!("  (Next step: real Proof-of-Compute.)\n");
 
     let client = Client::new();
-    let api_base = "http://127.0.0.1:8080";
+    let api_base = "https://kascompute-testnet.onrender.com";
 
     loop {
         println!(
