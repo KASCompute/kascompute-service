@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signer};
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::Signer;
 use rand::rngs::OsRng;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -161,7 +162,7 @@ fn send_heartbeat(
         .as_secs();
     let msg = format!("{}|{}|{}", cfg.node_id, cfg.compute_profile, ts);
 
-    // Signieren
+    // Signieren (ed25519-dalek v2 + Signer-Trait)
     let sig = signing_key.sign(msg.as_bytes());
 
     let payload = HeartbeatRequest {
@@ -221,7 +222,9 @@ fn main() -> Result<()> {
             cfg.node_id, cfg.kaspa_rpc_url, cfg.compute_profile
         );
 
-        if let Err(err) = send_heartbeat(&client, api_base, &cfg, &signing_key, &verify_key) {
+        if let Err(err) =
+            send_heartbeat(&client, api_base, &cfg, &signing_key, &verify_key)
+        {
             eprintln!("[NODE {}] Failed to send heartbeat: {:?}", cfg.node_id, err);
         }
 

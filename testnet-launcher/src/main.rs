@@ -15,8 +15,6 @@ use std::{
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use anyhow::Result;
-use ed25519_dalek::{Signature, VerifyingKey};
-use ed25519_dalek::ed25519::signature::Verifier;
 
 // -------------------------
 // KCT EMISSION MODEL
@@ -85,7 +83,12 @@ struct NodeHeartbeat {
     node_id: String,
     public_key_hex: String,
     compute_profile: String,
+
+    // werden vom node-launcher evtl. mitgeschickt,
+    // stören aber nicht, wenn wir sie ignorieren:
+    #[serde(default)]
     timestamp_unix: Option<u64>,
+    #[serde(default)]
     signature_hex: Option<String>,
 }
 
@@ -95,7 +98,7 @@ struct NodeRegistryEntry {
     public_key_hex: String,
     compute_profile: String,
     last_seen_unix: u64,
-    compute_score: u64, // einfacher „Compute Score“
+    compute_score: u64,
 }
 
 type NodeRegistry = Arc<Mutex<HashMap<String, NodeRegistryEntry>>>;
@@ -109,96 +112,8 @@ async fn node_heartbeat(
         .unwrap()
         .as_secs();
 
-    // --- Signaturprüfung (wenn Daten vorhanden sind) ----
-    if let (Some(ts), Some(sig_hex)) = (payload.timestamp_unix, payload.signature_hex.clone()) {
-        // einfache Anti-Replay-Regel: max. +/- 120 Sekunden
-        let diff = if now >= ts { now - ts } else { ts - now };
-        if diff > 120 {
-            eprintln!(
-                "[BACKEND] Rejected heartbeat from {}: timestamp too far in the past/future (diff={}s)",
-                payload.node_id, diff
-            );
-            return StatusCode::UNAUTHORIZED;
-        }
-
-        // Message genauso bauen wie im Node-Launcher
-        let msg = format!("{}|{}|{}", payload.node_id, payload.compute_profile, ts);
-        let msg_bytes = msg.as_bytes();
-
-        // Public Key aus Hex
-        let pk_bytes = match hex::decode(&payload.public_key_hex) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!(
-                    "[BACKEND] Invalid public_key_hex from {}: {e}",
-                    payload.node_id
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-        };
-
-        // Signature aus Hex
-        let sig_bytes = match hex::decode(&sig_hex) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!(
-                    "[BACKEND] Invalid signature_hex from {}: {e}",
-                    payload.node_id
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-        };
-
-        if pk_bytes.len() != 32 || sig_bytes.len() != 64 {
-            eprintln!(
-                "[BACKEND] Wrong key/signature length from {}",
-                payload.node_id
-            );
-            return StatusCode::BAD_REQUEST;
-        }
-
-        // VerifyingKey für ed25519-dalek v2
-        let pk = match VerifyingKey::try_from(&pk_bytes[..]) {
-            Ok(pk) => pk,
-            Err(e) => {
-                eprintln!(
-                    "[BACKEND] Invalid public key from {}: {e}",
-                    payload.node_id
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-        };
-
-        // Signature für ed25519-dalek v2
-        let sig = match Signature::try_from(&sig_bytes[..]) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!(
-                    "[BACKEND] Invalid signature from {}: {e}",
-                    payload.node_id
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-        };
-
-        // Signatur verifizieren
-        if let Err(e) = pk.verify(msg_bytes, &sig) {
-            eprintln!(
-                "[BACKEND] BAD SIGNATURE from {}: {e}",
-                payload.node_id
-            );
-            return StatusCode::UNAUTHORIZED;
-        }
-    } else {
-        // Kein Timestamp / keine Signatur → wir akzeptieren es noch,
-        // loggen aber, dass es unsigniert ist.
-        eprintln!(
-            "[BACKEND] Unsigned heartbeat from {} (legacy mode)",
-            payload.node_id
-        );
-    }
-
-    // --- Wenn wir hier sind, ist entweder alles valid oder legacy erlaubt ---
+    // 👉 Aktuell KEINE Signaturprüfung – alles wird angenommen
+    // (Node-Launcher kann trotzdem schon Signaturen erzeugen.)
 
     let mut map = registry.lock().unwrap();
 
@@ -229,7 +144,7 @@ async fn list_nodes(State(registry): State<NodeRegistry>) -> Json<Vec<NodeRegist
     let map = registry.lock().unwrap();
     let mut nodes: Vec<NodeRegistryEntry> = map.values().cloned().collect();
 
-    // nur fürs schöne: nach Node-ID sortieren
+    // nur fürs Schöne: nach Node-ID sortieren
     nodes.sort_by(|a, b| a.node_id.cmp(&b.node_id));
 
     Json(nodes)
@@ -262,7 +177,7 @@ async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> 
     })
 }
 
-// einfacher, aber realistischer Investor-Cashflow (KEIN „Demo“-Label)
+// einfacher, aber realistischer Investor-Cashflow
 async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorResponse> {
     let years = q.years.max(1).min(30);
     let mut gross_sum = 0.0;
@@ -289,7 +204,6 @@ async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorRes
         npv += cf_investor / disc_factor;
     }
 
-    // Grobe APY-Schätzung: durchschn. Investor-CF / erste Fee
     let avg_investor = investor_sum / years as f64;
     let base = q.fee_annual.max(1.0);
     let apy_estimate = (avg_investor / base).max(0.0);
@@ -322,8 +236,8 @@ async fn main() -> Result<()> {
         .route("/health", get(health))
         .route("/reward/preview", post(reward_preview))
         .route("/investor/value_flow", get(investor_value_flow))
-        .route("/node/heartbeat", post(node_heartbeat)) // Node sendet Heartbeats
-        .route("/nodes", get(list_nodes))               // Dashboard listet Nodes
+        .route("/node/heartbeat", post(node_heartbeat))
+        .route("/nodes", get(list_nodes))
         // Root -> Dashboard
         .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
         // Dashboard unter /dashboard
