@@ -2,6 +2,8 @@
 // Reward Preview + Investor Value Flow + Treasury Vesting
 
 const BASE = window.location.origin;
+// erlaubt Render / andere Domains für die API:
+const API_BASE = window.KCT_API_BASE || BASE;
 
 // Demo FX (nur Anzeige)
 const KCT_TO_USD = 0.05;
@@ -24,6 +26,10 @@ let lastInvestorData = null;
 
 let investorChart = null;
 let treasuryChart = null;
+
+// zusätzliche State für Leaderboard
+let latestNodes = [];
+let latestProofs = [];
 
 // i18n
 const I18N = {
@@ -177,7 +183,7 @@ async function checkApiHealth() {
   el.textContent = "Checking API…";
 
   try {
-    const res = await fetch(`${BASE}/health`);
+    const res = await fetch(`${API_BASE}/health`);
     if (!res.ok) throw new Error("HTTP " + res.status);
     const txt = (await res.text()).trim().toLowerCase();
     if (txt.includes("ok")) {
@@ -227,7 +233,7 @@ async function handleRewardClick() {
   summaryBox.textContent = "Loading…";
 
   try {
-    const res = await fetch(`${BASE}/reward/preview`, {
+    const res = await fetch(`${API_BASE}/reward/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month }),
@@ -400,7 +406,7 @@ async function handleInvestorClick() {
   summary.textContent = "Loading…";
 
   try {
-    const url = new URL(`${BASE}/investor/value_flow`);
+    const url = new URL(API_BASE + "/investor/value_flow");
     url.searchParams.set("fee_annual", String(fee));
     url.searchParams.set("investor_pct", String(investor_pct));
     url.searchParams.set("years", String(years));
@@ -412,7 +418,7 @@ async function handleInvestorClick() {
 
     let data = await res.json();
 
-    // 🔥 Fallback: neue Rust-API liefert nur Emissionen
+    // Fallback: neue Rust-API liefert nur Emissionen
     if (
       typeof data.years === "undefined" &&
       typeof data.t_years === "undefined" &&
@@ -742,6 +748,147 @@ function setupCopyButton(btnId, sourceId) {
   });
 }
 
+// ---------- Leaderboard / GPU helpers (global) ----------
+
+function detectGpu(profile) {
+  if (!profile) return false;
+  const h = profile.toLowerCase();
+  const gpuKeywords = [
+    "rtx",
+    "gtx",
+    "radeon",
+    "rx ",
+    "quadro",
+    "a40",
+    "a100",
+    "h100",
+    "3060",
+    "3070",
+    "3080",
+    "3090",
+    "4060",
+    "4070",
+    "4080",
+    "4090",
+  ];
+  return gpuKeywords.some((kw) => h.includes(kw));
+}
+
+function buildLeaderboard(nodes, proofs) {
+  const stats = new Map();
+
+  // Basis aus Nodes
+  (nodes || []).forEach((n) => {
+    stats.set(n.node_id, {
+      node_id: n.node_id,
+      compute_profile: n.compute_profile || "unknown",
+      compute_score: n.compute_score ?? 0,
+      last_seen_unix: n.last_seen_unix || 0,
+      totalProofs: 0,
+      totalWorkUnits: 0,
+      totalRewardKct: 0,
+      hasGpu: detectGpu(n.compute_profile || ""),
+    });
+  });
+
+  // Proofs aggregieren
+  (proofs || []).forEach((p) => {
+    const id = p.node_id;
+    if (!id) return;
+
+    if (!stats.has(id)) {
+      stats.set(id, {
+        node_id: id,
+        compute_profile: "unknown",
+        compute_score: 0,
+        last_seen_unix: p.timestamp || 0,
+        totalProofs: 0,
+        totalWorkUnits: 0,
+        totalRewardKct: 0,
+        hasGpu: false,
+      });
+    }
+
+    const s = stats.get(id);
+    s.totalProofs += 1;
+    s.totalWorkUnits += p.work_units ?? 0;
+    s.totalRewardKct += p.estimated_reward_kct ?? 0;
+    if (p.timestamp && p.timestamp > (s.last_seen_unix || 0)) {
+      s.last_seen_unix = p.timestamp;
+    }
+  });
+
+  const list = Array.from(stats.values());
+  list.sort((a, b) => {
+    if (b.totalProofs !== a.totalProofs) return b.totalProofs - a.totalProofs;
+    if (b.totalWorkUnits !== a.totalWorkUnits)
+      return b.totalWorkUnits - a.totalWorkUnits;
+    return (b.compute_score || 0) - (a.compute_score || 0);
+  });
+
+  return list;
+}
+
+function renderLeaderboardTable(leaderboard) {
+  const tbody = document.getElementById("leaderboard-body");
+  if (!tbody) return;
+
+  if (!leaderboard || leaderboard.length === 0) {
+    tbody.innerHTML = `
+      <tr class="lb-empty-row">
+        <td colspan="5">No node activity yet.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = "";
+
+  leaderboard.forEach((entry, index) => {
+    const tr = document.createElement("tr");
+    tr.className = "leaderboard-row";
+
+    const gpuPill = entry.hasGpu
+      ? '<span class="lb-gpu-pill">GPU</span>'
+      : '<span class="lb-cpu-pill">CPU</span>';
+
+    const lastSeen =
+      entry.last_seen_unix && entry.last_seen_unix > 0
+        ? new Date(entry.last_seen_unix * 1000).toLocaleString()
+        : "-";
+
+    const work = (entry.totalWorkUnits || 0).toLocaleString();
+    const reward = (entry.totalRewardKct || 0).toFixed(6);
+
+    tr.innerHTML = `
+      <td class="lb-rank">#${index + 1}</td>
+      <td>
+        <div class="lb-node-id">${entry.node_id}</div>
+      </td>
+      <td>
+        <div class="lb-profile">
+          <span>${entry.compute_profile}</span>
+          ${gpuPill}
+        </div>
+      </td>
+      <td class="lb-proofs">${entry.totalProofs}</td>
+      <td class="lb-meta">
+        <div>${work} wu / ${reward} KCT</div>
+        <div class="lb-last-seen">${lastSeen}</div>
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+}
+
+function updateLeaderboard() {
+  const tbody = document.getElementById("leaderboard-body");
+  if (!tbody) return; // wenn kein Leaderboard-Panel existiert, einfach nichts tun
+  const lb = buildLeaderboard(latestNodes || [], latestProofs || []);
+  renderLeaderboardTable(lb);
+}
+
 // Init
 document.addEventListener("DOMContentLoaded", () => {
   // Theme
@@ -756,7 +903,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------- ACTIVE NODES (dein alter Code) ----------
+  // ---------- ACTIVE NODES ----------
   function shortPk(pk) {
     if (!pk) return "";
     if (pk.length <= 14) return pk;
@@ -776,6 +923,14 @@ document.addEventListener("DOMContentLoaded", () => {
     return hours + " h ago";
   }
 
+  // Header-Update für Nodes
+  function updateHeaderNodes(nodes) {
+    const el = document.getElementById("stat-nodes");
+    if (!el) return;
+    const count = Array.isArray(nodes) ? nodes.length : 0;
+    el.textContent = `Nodes: ${count}`;
+  }
+
   function renderNodes(nodes) {
     const countEl = document.getElementById("node-count");
     const listEl = document.getElementById("node-list");
@@ -784,6 +939,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!nodes || nodes.length === 0) {
       countEl.textContent = "0";
       listEl.innerHTML = `<li class="node-empty">No nodes online yet.</li>`;
+      updateHeaderNodes([]);
+      latestNodes = [];
+      updateLeaderboard();
       return;
     }
 
@@ -809,6 +967,10 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
       })
       .join("");
+
+    updateHeaderNodes(nodes);
+    latestNodes = nodes;
+    updateLeaderboard();
   }
 
   async function fetchNodes() {
@@ -818,7 +980,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const res = await fetch(`${BASE}/nodes`);
+      const res = await fetch(`${API_BASE}/nodes`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       renderNodes(data);
@@ -827,6 +989,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (listEl) {
         listEl.innerHTML = `<li class="node-empty">Could not load nodes.</li>`;
       }
+      updateHeaderNodes([]);
+      latestNodes = [];
+      updateLeaderboard();
     } finally {
       if (listEl) {
         listEl.classList.remove("loading");
@@ -834,43 +999,67 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- PROOF-OF-COMPUTE FEED (neu) ----------
-  function renderProofs(proofs) {
-    const tbody = document.getElementById("proofs-body");
-    if (!tbody) return;
-
-    if (!proofs || proofs.length === 0) {
-      tbody.innerHTML = `
-        <tr class="poc-empty-row">
-          <td colspan="5">No proofs yet.</td>
-        </tr>
-      `;
-      return;
-    }
-
-    tbody.innerHTML = "";
-
-    proofs.forEach((p) => {
-      const tr = document.createElement("tr");
-      const date = new Date(p.timestamp * 1000);
-      const ts = date.toLocaleString();
-
-      tr.innerHTML = `
-        <td>${p.node_id}</td>
-        <td>${p.job_id}</td>
-        <td>${(p.work_units ?? 0).toLocaleString()}</td>
-        <td>${(p.estimated_reward_kct ?? 0).toFixed(6)}</td>
-        <td>${ts}</td>
-      `;
-
-      tbody.appendChild(tr);
-    });
+  // ---------- PROOF-OF-COMPUTE FEED ----------
+  // Header-Update für Proofs
+  function updateHeaderProofs(proofs) {
+    const el = document.getElementById("stat-proofs");
+    if (!el) return;
+    const count = Array.isArray(proofs) ? proofs.length : 0;
+    el.textContent = `Proofs: ${count}`;
   }
+
+  function renderProofs(proofs) {
+  const tbody = document.getElementById("proofs-body");
+  if (!tbody) return;
+
+  // Kein Proof → leere Zeile + Header / Leaderboard leeren
+  if (!proofs || proofs.length === 0) {
+    tbody.innerHTML = `
+      <tr class="poc-empty-row">
+        <td colspan="5">No proofs yet.</td>
+      </tr>
+    `;
+    updateHeaderProofs([]);
+    latestProofs = [];
+    updateLeaderboard();
+    return;
+  }
+
+  // Header-Zähler & Leaderboard sollen ALLE Proofs kennen
+  updateHeaderProofs(proofs);
+  latestProofs = proofs;
+  updateLeaderboard();
+
+  // 🔥 Nur die letzten 10 Proofs im Table anzeigen (neueste oben)
+  const sorted = [...proofs].sort(
+    (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+  );
+  const visible = sorted.slice(0, 10);
+
+  tbody.innerHTML = "";
+
+  visible.forEach((p) => {
+    const tr = document.createElement("tr");
+    const date = new Date(p.timestamp * 1000);
+    const ts = date.toLocaleString();
+
+    tr.innerHTML = `
+      <td>${p.node_id}</td>
+      <td>${p.job_id}</td>
+      <td>${(p.work_units ?? 0).toLocaleString()}</td>
+      <td>${(p.estimated_reward_kct ?? 0).toFixed(6)}</td>
+      <td>${ts}</td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+}
+
 
   async function fetchProofs() {
     const tbody = document.getElementById("proofs-body");
     try {
-      const res = await fetch(`${BASE}/api/stats/proofs`);
+      const res = await fetch(`${API_BASE}/api/stats/proofs`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       renderProofs(data);
@@ -883,6 +1072,9 @@ document.addEventListener("DOMContentLoaded", () => {
           </tr>
         `;
       }
+      updateHeaderProofs([]);
+      latestProofs = [];
+      updateLeaderboard();
     }
   }
 

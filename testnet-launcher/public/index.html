@@ -19,6 +19,12 @@
       <p class="subtitle">
         Emission, investor & treasury tools — powered by your KCT model.
       </p>
+
+      <!-- Header-Stats -->
+      <div id="top-stats">
+        <span class="stat-badge" id="stat-nodes">Nodes: 0</span>
+        <span class="stat-badge" id="stat-proofs">Proofs: 0</span>
+      </div>
     </div>
   </div>
 
@@ -223,8 +229,7 @@
         <div class="stat-label">Online</div>
         <div id="node-count" class="stat-value">0</div>
       </div>
-    <button id="btn-refresh-nodes" class="pill-btn">Refresh</button>
-
+      <button id="btn-refresh-nodes" class="pill-btn">Refresh</button>
     </div>
 
     <ul id="node-list" class="node-list">
@@ -232,7 +237,7 @@
     </ul>
   </section>
   
-<!-- PROOF OF COMPUTE FEED -->
+  <!-- PROOF OF COMPUTE FEED -->
   <section class="card">
     <div class="card-header">
       <h2>
@@ -257,6 +262,36 @@
       <tbody id="proofs-body">
         <tr class="poc-empty-row">
           <td colspan="5">Waiting for proofs…</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- NODE LEADERBOARD -->
+  <section class="card">
+    <div class="card-header">
+      <h2>
+        <span class="card-icon">🏁</span>
+        Node Leaderboard
+      </h2>
+      <p class="card-subtitle">
+        Ranked by submitted proofs and estimated KCT rewards. GPU nodes are highlighted.
+      </p>
+    </div>
+
+    <table class="leaderboard-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Node</th>
+          <th>Profile</th>
+          <th>Proofs</th>
+          <th>Work / Reward</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard-body">
+        <tr class="lb-empty-row">
+          <td colspan="5">Waiting for node activity…</td>
         </tr>
       </tbody>
     </table>
