@@ -299,10 +299,24 @@
 
 </main>
 
-<!-- Für Live-Deploys kannst du optional hier window.KCT_API_BASE setzen,
-     wenn Frontend & Backend auf verschiedenen Hosts laufen.
-     Lokal kümmert sich app.js mit detectApiBase automatisch darum. -->
+<script>
+  // Environment-Switch für API-Base:
+  // - lokal: immer 127.0.0.1:8080
+  // - live (Render / Domain): gleiche Origin wie das Dashboard
+  (function () {
+    const host = window.location.hostname;
+
+    if (host === "127.0.0.1" || host === "localhost") {
+      // Lokaler Dev-Mode
+      window.KCT_API_BASE = "http://127.0.0.1:8080";
+    } else {
+      // Alles, was nicht lokal ist → Render / Domain
+      window.KCT_API_BASE = window.location.origin;
+    }
+  })();
+</script>
 <script src="app.js"></script>
+
 
 </body>
 </html>
