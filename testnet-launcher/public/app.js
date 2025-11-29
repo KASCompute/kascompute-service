@@ -1,9 +1,26 @@
 // KASCompute Testnet Dashboard
 // Reward Preview + Investor Value Flow + Treasury Vesting
 
-const BASE = window.location.origin;
-// erlaubt Render / andere Domains für die API:
-const API_BASE = window.KCT_API_BASE || BASE;
+// Automatische API-Base-Erkennung
+function detectApiBase() {
+  // 1. Wenn explizit gesetzt (z.B. auf Netlify → Railway-Backend), dann nimm das:
+  if (window.KCT_API_BASE) {
+    return window.KCT_API_BASE;
+  }
+
+  const host = window.location.hostname;
+
+  // 2. Lokal / Test: alles was localhost oder 127.0.0.1 ist → direkt auf deinen Launcher
+  if (host === "127.0.0.1" || host === "localhost") {
+    return "http://127.0.0.1:8080";
+  }
+
+  // 3. Standard-Fall: gleiche Origin wie das Dashboard (Render, Railway, kascompute.org/testnet, …)
+  return window.location.origin;
+}
+
+const API_BASE = detectApiBase();
+
 
 // Demo FX (nur Anzeige)
 const KCT_TO_USD = 0.05;

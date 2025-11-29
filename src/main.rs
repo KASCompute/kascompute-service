@@ -10,6 +10,9 @@ use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use anyhow::Result;
 use axum::http::StatusCode;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // Neues Modul für Proof-of-Compute
 mod proof_of_compute;
@@ -74,6 +77,31 @@ struct NodeHeartbeat {
 }
 
 // -------------------------
+// NODE INFO + GLOBAL STORE
+// -------------------------
+
+#[derive(Debug, Clone, Serialize)]
+struct NodeInfo {
+    node_id: String,
+    public_key_hex: String,
+    compute_profile: String,
+    compute_score: u64,
+    last_seen_unix: u64,
+}
+
+// GLOBAL NODE STORAGE (RAM)
+static mut NODE_MAP: Option<Arc<Mutex<HashMap<String, NodeInfo>>>> = None;
+
+fn nodes_store() -> &'static Arc<Mutex<HashMap<String, NodeInfo>>> {
+    unsafe {
+        if NODE_MAP.is_none() {
+            NODE_MAP = Some(Arc::new(Mutex::new(HashMap::new())));
+        }
+        NODE_MAP.as_ref().unwrap()
+    }
+}
+
+// -------------------------
 // HANDLER
 // -------------------------
 
@@ -119,7 +147,6 @@ async fn reward_preview_get(Query(params): Query<RewardRequest>) -> Json<RewardR
     })
 }
 
-
 // Kumulative Emissionskurve über alle 168 Monate
 async fn reward_cumulative() -> Json<Vec<CumulativePoint>> {
     let mut points = Vec::new();
@@ -154,17 +181,54 @@ async fn investor_value_flow() -> Json<InvestorValueFlow> {
     })
 }
 
-// Node-Heartbeat für spätere Provider-Logik
+// Node-Heartbeat: Registry + Node-Store + Score
 async fn node_heartbeat(Json(payload): Json<NodeHeartbeat>) -> StatusCode {
     println!(
-        "[BACKEND] Heartbeat from node {} | pk={} | mode={}",
+        "[BACKEND] Heartbeat → node={} | pk={} | mode={}",
         payload.node_id, payload.public_key_hex, payload.compute_profile
     );
 
-    // Node-Pubkey in Registry speichern, damit PoC ihn findet
+    // Public Key auch im Proof-of-Compute-Registry hinterlegen (für Signaturprüfung)
     crate::proof_of_compute::registry().insert(&payload.node_id, &payload.public_key_hex);
 
+    // Timestamp für "last_seen" und Score
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let store = nodes_store();
+    let mut nodes = store.lock().unwrap();
+
+    let entry = nodes
+        .entry(payload.node_id.clone())
+        .or_insert_with(|| NodeInfo {
+            node_id: payload.node_id.clone(),
+            public_key_hex: payload.public_key_hex.clone(),
+            compute_profile: payload.compute_profile.clone(),
+            compute_score: 0,
+            last_seen_unix: now,
+        });
+
+    // Werte aktualisieren
+    entry.public_key_hex = payload.public_key_hex.clone();
+    entry.compute_profile = payload.compute_profile.clone();
+    entry.last_seen_unix = now;
+    entry.compute_score += 1; // +1 Score pro Heartbeat
+
     StatusCode::OK
+}
+
+// Node-Liste für Dashboard
+async fn list_nodes() -> Json<Vec<NodeInfo>> {
+    let store = nodes_store();
+    let map = store.lock().unwrap();
+    let mut v: Vec<NodeInfo> = map.values().cloned().collect();
+
+    // Neueste zuerst (höchstes last_seen oben)
+    v.sort_by_key(|n| std::cmp::Reverse(n.last_seen_unix));
+
+    Json(v)
 }
 
 // -------------------------
@@ -180,13 +244,14 @@ async fn main() -> Result<()> {
         // API-Routen
         .route("/health", get(health))
         .route("/node/heartbeat", post(node_heartbeat))
+        .route("/nodes", get(list_nodes))
         .route(
             "/reward/preview",
             get(reward_preview_get).post(reward_preview),
         )
         .route("/reward/cumulative", get(reward_cumulative))
         .route("/investor/value_flow", get(investor_value_flow))
-        // Proof-of-Compute API
+        // Proof-of-Compute API (aus Modul)
         .merge(proof_of_compute::router())
         // Root -> Dashboard
         .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
