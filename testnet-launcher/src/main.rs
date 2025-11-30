@@ -212,7 +212,7 @@ async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<Dashboa
 
     let mut proofs_recent = proofs.clone();
     proofs_recent.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
-    proofs_recent.truncate(10); // max 10 Zeilen PoC
+    proofs_recent.truncate(100); // max 10 Zeilen PoC
 
     Json(DashboardState {
         emission,

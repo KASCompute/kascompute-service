@@ -708,7 +708,7 @@ function updateProofsFeed(proofs) {
     return;
   }
 
-  proofs.slice(0, 10).forEach((p) => {
+  proofs.slice(0, 100).forEach((p) => {
     const unix = p.timestamp_unix ?? p.timestamp ?? 0;
     const dateStr = unix ? new Date(unix * 1000).toLocaleString() : "-";
     const wu = p.work_units ?? 0;
