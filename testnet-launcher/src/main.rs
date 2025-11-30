@@ -34,7 +34,7 @@ fn block_reward_for_month(month: u32) -> f64 {
     START_REWARD_KCT * factor
 }
 
-/// Gesamt-Emission in Monat m (nur Info, wird im JSON mit ausgegeben)
+/// Gesamt-Emission in Monat m
 fn monthly_emission_for_month(month: u32) -> f64 {
     block_reward_for_month(month) * BLOCKS_PER_MONTH
 }
@@ -84,8 +84,6 @@ struct NodeHeartbeat {
     public_key_hex: String,
     compute_profile: String,
 
-    // werden vom node-launcher evtl. mitgeschickt,
-    // stören aber nicht, wenn wir sie ignorieren:
     #[serde(default)]
     timestamp_unix: Option<u64>,
     #[serde(default)]
@@ -102,53 +100,6 @@ struct NodeRegistryEntry {
 }
 
 type NodeRegistry = Arc<Mutex<HashMap<String, NodeRegistryEntry>>>;
-
-async fn node_heartbeat(
-    State(registry): State<NodeRegistry>,
-    Json(payload): Json<NodeHeartbeat>,
-) -> StatusCode {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // 👉 Aktuell KEINE Signaturprüfung – alles wird angenommen
-    // (Node-Launcher kann trotzdem schon Signaturen erzeugen.)
-
-    let mut map = registry.lock().unwrap();
-
-    let entry = map.entry(payload.node_id.clone()).or_insert(
-        NodeRegistryEntry {
-            node_id: payload.node_id.clone(),
-            public_key_hex: payload.public_key_hex.clone(),
-            compute_profile: payload.compute_profile.clone(),
-            last_seen_unix: now,
-            compute_score: 0,
-        },
-    );
-
-    entry.public_key_hex = payload.public_key_hex.clone();
-    entry.compute_profile = payload.compute_profile.clone();
-    entry.last_seen_unix = now;
-    entry.compute_score += 1;
-
-    println!(
-        "[BACKEND] Heartbeat from node {} | mode={} | score={} | last_seen={}",
-        entry.node_id, entry.compute_profile, entry.compute_score, entry.last_seen_unix
-    );
-
-    StatusCode::OK
-}
-
-async fn list_nodes(State(registry): State<NodeRegistry>) -> Json<Vec<NodeRegistryEntry>> {
-    let map = registry.lock().unwrap();
-    let mut nodes: Vec<NodeRegistryEntry> = map.values().cloned().collect();
-
-    // nur fürs Schöne: nach Node-ID sortieren
-    nodes.sort_by(|a, b| a.node_id.cmp(&b.node_id));
-
-    Json(nodes)
-}
 
 // -------------------------
 // PROOF OF COMPUTE
@@ -175,9 +126,60 @@ struct ProofRecord {
 
 type ProofStore = Arc<Mutex<Vec<ProofRecord>>>;
 
+// Gemeinsamer AppState für axum
+#[derive(Clone)]
+struct AppState {
+    registry: NodeRegistry,
+    proofs: ProofStore,
+}
+
+// -------------------------
+// HANDLER
+// -------------------------
+
+async fn node_heartbeat(
+    State(state): State<AppState>,
+    Json(payload): Json<NodeHeartbeat>,
+) -> StatusCode {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let mut map = state.registry.lock().unwrap();
+
+    let entry = map.entry(payload.node_id.clone()).or_insert(
+        NodeRegistryEntry {
+            node_id: payload.node_id.clone(),
+            public_key_hex: payload.public_key_hex.clone(),
+            compute_profile: payload.compute_profile.clone(),
+            last_seen_unix: now,
+            compute_score: 0,
+        },
+    );
+
+    entry.public_key_hex = payload.public_key_hex.clone();
+    entry.compute_profile = payload.compute_profile.clone();
+    entry.last_seen_unix = now;
+    entry.compute_score += 1;
+
+    println!(
+        "[BACKEND] Heartbeat from node {} | profile={} | score={} | last_seen={}",
+        entry.node_id, entry.compute_profile, entry.compute_score, entry.last_seen_unix
+    );
+
+    StatusCode::OK
+}
+
+async fn list_nodes(State(state): State<AppState>) -> Json<Vec<NodeRegistryEntry>> {
+    let map = state.registry.lock().unwrap();
+    let mut nodes: Vec<NodeRegistryEntry> = map.values().cloned().collect();
+    nodes.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+    Json(nodes)
+}
+
 async fn submit_proof(
-    State(proofs): State<ProofStore>,
-    State(registry): State<NodeRegistry>,
+    State(state): State<AppState>,
     Json(payload): Json<ProofSubmission>,
 ) -> StatusCode {
     let now = SystemTime::now()
@@ -185,9 +187,9 @@ async fn submit_proof(
         .unwrap()
         .as_secs();
 
-    // Prüfen ob Node existiert
+    // Node muss existieren
     let node_exists = {
-        let map = registry.lock().unwrap();
+        let map = state.registry.lock().unwrap();
         map.contains_key(&payload.node_id)
     };
 
@@ -199,8 +201,7 @@ async fn submit_proof(
         return StatusCode::BAD_REQUEST;
     }
 
-    // Proof speichern
-    let mut store = proofs.lock().unwrap();
+    let mut store = state.proofs.lock().unwrap();
     store.push(ProofRecord {
         node_id: payload.node_id.clone(),
         job_id: payload.job_id.clone(),
@@ -218,20 +219,19 @@ async fn submit_proof(
     StatusCode::OK
 }
 
-async fn list_proofs(State(proofs): State<ProofStore>) -> Json<Vec<ProofRecord>> {
-    let store = proofs.lock().unwrap();
+async fn list_proofs(State(state): State<AppState>) -> Json<Vec<ProofRecord>> {
+    let store = state.proofs.lock().unwrap();
     Json(store.clone())
 }
 
 // -------------------------
-// HANDLER (EMISSION / INVESTOR / HEALTH)
+// EMISSION / INVESTOR / HEALTH
 // -------------------------
 
 async fn health() -> &'static str {
     "OK"
 }
 
-// ECHTES KCT-EMISSIONSMODELL, KEIN DEMO
 async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> {
     let month = req.month.clamp(1, TOTAL_MONTHS);
     let block_reward = block_reward_for_month(month);
@@ -250,7 +250,6 @@ async fn reward_preview(Json(req): Json<RewardRequest>) -> Json<RewardResponse> 
     })
 }
 
-// einfacher, aber realistischer Investor-Cashflow
 async fn investor_value_flow(Query(q): Query<InvestorQuery>) -> Json<InvestorResponse> {
     let years = q.years.max(1).min(30);
     let mut gross_sum = 0.0;
@@ -301,11 +300,11 @@ async fn main() -> Result<()> {
     // statische Dashboard-Dateien
     let static_dir = ServeDir::new("testnet-launcher/public");
 
-    // gemeinsame Node-Registry für Heartbeats
+    // gemeinsame State-Objekte
     let registry: NodeRegistry = Arc::new(Mutex::new(HashMap::new()));
-
-    // Proof Store (In-Memory)
     let proofs: ProofStore = Arc::new(Mutex::new(Vec::new()));
+
+    let state = AppState { registry, proofs };
 
     let app = Router::new()
         // API-Routen
@@ -314,20 +313,18 @@ async fn main() -> Result<()> {
         .route("/investor/value_flow", get(investor_value_flow))
         .route("/node/heartbeat", post(node_heartbeat))
         .route("/nodes", get(list_nodes))
-
-        // Proof-of-Compute
         .route("/node/proof", post(submit_proof))
         .route("/proofs", get(list_proofs))
-
+        // Alias für das Dashboard (alte URL)
+        .route("/api/stats/proofs", get(list_proofs))
         // Root -> Dashboard
         .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
         // Dashboard unter /dashboard
         .nest_service("/dashboard", static_dir)
         // State anhängen
-        .with_state(registry)
-        .with_state(proofs);
+        .with_state(state);
 
-    // Port lokal (8080) oder von Railway/Render (PORT)
+    // Port lokal (8080) oder von Render (PORT)
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()
