@@ -11,9 +11,11 @@ use std::{
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
-// ---------- Helpers ----------
+// =======================
+// Helper
+// =======================
 
 fn unix_now() -> u64 {
     SystemTime::now()
@@ -22,7 +24,9 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
-// ---------- Datenstrukturen ----------
+// =======================
+// Datenstrukturen
+// =======================
 
 #[derive(Clone, Serialize)]
 struct EmissionState {
@@ -68,7 +72,9 @@ struct AppState {
     proofs: Mutex<Vec<ProofEntry>>,
 }
 
-// ---------- Request-Body-Structs ----------
+// =======================
+// Request-Bodies
+// =======================
 
 #[derive(Deserialize)]
 struct HeartbeatBody {
@@ -86,7 +92,9 @@ struct ProofBody {
     proof_hash: String,
 }
 
-// ---------- Response-Structs ----------
+// =======================
+// Response-Structs
+// =======================
 
 #[derive(Serialize)]
 struct ActiveNodesResponse {
@@ -106,9 +114,11 @@ struct DashboardState {
     proofs_recent: Vec<ProofEntry>,
 }
 
-// ---------- Handlers ----------
+// =======================
+// Handler
+// =======================
 
-/// POST /node/heartbeat
+/// POST /api/node/heartbeat
 async fn post_heartbeat(
     State(state): State<Arc<AppState>>,
     Json(body): Json<HeartbeatBody>,
@@ -129,7 +139,7 @@ async fn post_heartbeat(
     }))
 }
 
-/// POST /node/proof
+/// POST /api/node/proof
 async fn post_proof(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ProofBody>,
@@ -158,7 +168,7 @@ async fn post_proof(
     }))
 }
 
-/// GET /nodes/active
+/// GET /api/nodes/active
 async fn get_active_nodes(State(state): State<Arc<AppState>>) -> Json<ActiveNodesResponse> {
     let now = unix_now();
     let nodes = state.nodes.lock().unwrap();
@@ -172,7 +182,7 @@ async fn get_active_nodes(State(state): State<Arc<AppState>>) -> Json<ActiveNode
     Json(ActiveNodesResponse { active_nodes: active })
 }
 
-/// GET /proofs/recent
+/// GET /api/proofs/recent
 async fn get_recent_proofs(State(state): State<Arc<AppState>>) -> Json<ProofsResponse> {
     let proofs = state.proofs.lock().unwrap();
 
@@ -199,7 +209,7 @@ async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<Dashboa
     let proofs = state.proofs.lock().unwrap();
     let mut proofs_recent = proofs.clone();
     proofs_recent.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
-    proofs_recent.truncate(10); // max 10 Zeilen PoC für Dashboard
+    proofs_recent.truncate(10); // max 10 Zeilen PoC
 
     Json(DashboardState {
         emission,
@@ -209,11 +219,13 @@ async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<Dashboa
     })
 }
 
-// ---------- main ----------
+// =======================
+// main
+// =======================
 
 #[tokio::main]
 async fn main() {
-    // Dummy-Startwerte – kannst du später dynamisch machen
+    // Dummy-Startwerte – später dynamisch
     let emission = EmissionState {
         total_supply_kct: 10_000_000_000,
         mined_supply_kct: 123_456_789,
@@ -239,16 +251,25 @@ async fn main() {
         proofs: Mutex::new(Vec::new()),
     });
 
-    // Router: APIs + statische Files aus /public
-    let app = Router::new()
+    // statische Files aus /public, mit Fallback auf index.html
+    let static_files = ServeDir::new("public")
+        .not_found_service(ServeFile::new("public/index.html"));
+
+    // API unter /api, Dashboard unter / und /dashboard
+    let api_router = Router::new()
         .route("/node/heartbeat", post(post_heartbeat))
         .route("/node/proof", post(post_proof))
         .route("/nodes/active", get(get_active_nodes))
         .route("/proofs/recent", get(get_recent_proofs))
-        .route("/api/state", get(get_dashboard_state))
-        .nest_service("/", ServeDir::new("public"))
+        .route("/state", get(get_dashboard_state))
         .with_state(state);
 
+    let app = Router::new()
+        .nest("/api", api_router)
+        .nest_service("/dashboard", static_files.clone())
+        .nest_service("/", static_files);
+
+    // PORT von Render
     let port: u16 = env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -259,7 +280,7 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .expect("failed to bind TCP listener");
+        .expect("failed to bind");
 
     axum::serve(listener, app)
         .await
