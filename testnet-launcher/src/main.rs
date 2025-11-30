@@ -11,7 +11,9 @@ use std::{
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
+
+// ---------- Helpers ----------
 
 fn unix_now() -> u64 {
     SystemTime::now()
@@ -19,6 +21,8 @@ fn unix_now() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
+
+// ---------- Datenstrukturen ----------
 
 #[derive(Clone, Serialize)]
 struct EmissionState {
@@ -57,13 +61,14 @@ struct ProofEntry {
     timestamp_unix: u64,
 }
 
-#[derive(Clone)]
 struct AppState {
     emission: Mutex<EmissionState>,
     economics: Mutex<EconomicState>,
     nodes: Mutex<HashMap<String, NodeState>>,
     proofs: Mutex<Vec<ProofEntry>>,
 }
+
+// ---------- Request-Body-Structs ----------
 
 #[derive(Deserialize)]
 struct HeartbeatBody {
@@ -80,6 +85,8 @@ struct ProofBody {
     estimated_reward_kct: f64,
     proof_hash: String,
 }
+
+// ---------- Response-Structs ----------
 
 #[derive(Serialize)]
 struct ActiveNodesResponse {
@@ -98,6 +105,8 @@ struct DashboardState {
     active_nodes: Vec<NodeState>,
     proofs_recent: Vec<ProofEntry>,
 }
+
+// ---------- Handlers ----------
 
 /// POST /node/heartbeat
 async fn post_heartbeat(
@@ -137,7 +146,7 @@ async fn post_proof(
         timestamp_unix: now,
     });
 
-    // Sicherheitsgrenze: nicht mehr als 1000 Proofs im Speicher
+    // nicht unendlich wachsen lassen
     if proofs.len() > 1000 {
         let drop = proofs.len() - 1000;
         proofs.drain(0..drop);
@@ -154,7 +163,6 @@ async fn get_active_nodes(State(state): State<Arc<AppState>>) -> Json<ActiveNode
     let now = unix_now();
     let nodes = state.nodes.lock().unwrap();
 
-    // 20 Sekunden Fenster für "active"
     let active: Vec<NodeState> = nodes
         .values()
         .filter(|n| now.saturating_sub(n.last_seen_unix) <= 20)
@@ -169,15 +177,13 @@ async fn get_recent_proofs(State(state): State<Arc<AppState>>) -> Json<ProofsRes
     let proofs = state.proofs.lock().unwrap();
 
     let mut list: Vec<ProofEntry> = proofs.clone();
-    // neueste zuerst
     list.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
-    // nur die letzten 100 zurückgeben, Frontend begrenzt später auf 10 Zeilen
     list.truncate(100);
 
     Json(ProofsResponse { proofs: list })
 }
 
-/// GET /api/state – alles für Dashboard in einem Call
+/// GET /api/state – alles fürs Dashboard
 async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<DashboardState> {
     let emission = state.emission.lock().unwrap().clone();
     let economics = state.economics.lock().unwrap().clone();
@@ -193,7 +199,7 @@ async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<Dashboa
     let proofs = state.proofs.lock().unwrap();
     let mut proofs_recent = proofs.clone();
     proofs_recent.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
-    proofs_recent.truncate(10); // hier auch nochmal 10, passt zu deinem Wunsch
+    proofs_recent.truncate(10); // max 10 Zeilen PoC für Dashboard
 
     Json(DashboardState {
         emission,
@@ -203,9 +209,11 @@ async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<Dashboa
     })
 }
 
+// ---------- main ----------
+
 #[tokio::main]
 async fn main() {
-    // Dummy-Startwerte – kannst du jederzeit anpassen
+    // Dummy-Startwerte – kannst du später dynamisch machen
     let emission = EmissionState {
         total_supply_kct: 10_000_000_000,
         mined_supply_kct: 123_456_789,
@@ -231,19 +239,15 @@ async fn main() {
         proofs: Mutex::new(Vec::new()),
     });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
+    // Router: APIs + statische Files aus /public
     let app = Router::new()
         .route("/node/heartbeat", post(post_heartbeat))
         .route("/node/proof", post(post_proof))
         .route("/nodes/active", get(get_active_nodes))
         .route("/proofs/recent", get(get_recent_proofs))
         .route("/api/state", get(get_dashboard_state))
-        .with_state(state)
-        .layer(cors);
+        .nest_service("/", ServeDir::new("public"))
+        .with_state(state);
 
     let port: u16 = env::var("PORT")
         .ok()
@@ -253,8 +257,11 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     println!("KASCompute testnet backend listening on {}", addr);
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .unwrap();
+        .expect("failed to bind TCP listener");
+
+    axum::serve(listener, app)
+        .await
+        .expect("server error");
 }
