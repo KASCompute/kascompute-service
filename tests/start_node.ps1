@@ -1,24 +1,40 @@
-# ============================================
-# KASCompute Node Launcher – Start Script
-# ============================================
+# ================================
+# KASCompute Test Node  (Render Backend)
+# ================================
 
-Write-Host "🚀 Starting KASCompute Node..." -ForegroundColor Cyan
-Write-Host ""
+$NODE_ID     = "kct-node-01"
+$PROFILE     = "gpu:rtx4090"
+$BACKEND_URL = "https://kascompute-testnet.onrender.com"
+$PUBLIC_KEY  = "Pk_" + ([Guid]::NewGuid().ToString("N").Substring(0,32))
 
-# >>> Pfad zu deinem kascompute-service-Projekt anpassen! <<<
-$projectPath = "C:\Users\Tarik Gaming PC\Desktop\kascompute-service"
+while ($true) {
 
-Set-Location $projectPath
+    # HEARTBEAT
+    $heartbeatBody = @{
+        node_id        = $NODE_ID
+        public_key_hex = $PUBLIC_KEY
+        compute_profile = $PROFILE
+    }
 
-# Optional: Browser-Dashboard automatisch öffnen
-Start-Process "https://kascompute-testnet.onrender.com/dashboard/"
+    Invoke-RestMethod -Uri "$BACKEND_URL/node/heartbeat" -Method POST -ContentType "application/json" -Body (ConvertTo-Json $heartbeatBody)
+    Write-Host "[HEARTBEAT OK]"
 
-# Node starten (cargo run)
-Write-Host "⏳ Launching node-launcher (cargo run --release --bin node-launcher)"
-Write-Host "--------------------------------------"
+    # PROOF
+    $jobId  = "job-$((Get-Random))"
+    $wu     = 32000
+    $reward = [Math]::Round($wu * 0.000001, 6)
+    $hash   = "hash-$([Guid]::NewGuid().ToString('N'))"
 
-cargo run --release --bin node-launcher
+    $proofBody = @{
+        node_id              = $NODE_ID
+        job_id               = $jobId
+        work_units           = $wu
+        estimated_reward_kct = $reward
+        proof_hash           = $hash
+    }
 
-Write-Host ""
-Write-Host "❗ Node stopped. Close this window to exit." -ForegroundColor Yellow
-Read-Host "Press Enter to close"
+    Invoke-RestMethod -Uri "$BACKEND_URL/node/proof" -Method POST -ContentType "application/json" -Body (ConvertTo-Json $proofBody)
+    Write-Host "[PROOF OK] job=$jobId wu=$wu"
+    
+    Start-Sleep -Seconds 3
+}

@@ -151,7 +151,80 @@ async fn list_nodes(State(registry): State<NodeRegistry>) -> Json<Vec<NodeRegist
 }
 
 // -------------------------
-// HANDLER (EMISSION / INVESTOR)
+// PROOF OF COMPUTE
+// -------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ProofSubmission {
+    node_id: String,
+    job_id: String,
+    work_units: u64,
+    estimated_reward_kct: f64,
+    proof_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ProofRecord {
+    node_id: String,
+    job_id: String,
+    work_units: u64,
+    estimated_reward_kct: f64,
+    proof_hash: String,
+    timestamp_unix: u64,
+}
+
+type ProofStore = Arc<Mutex<Vec<ProofRecord>>>;
+
+async fn submit_proof(
+    State(proofs): State<ProofStore>,
+    State(registry): State<NodeRegistry>,
+    Json(payload): Json<ProofSubmission>,
+) -> StatusCode {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    // Prüfen ob Node existiert
+    let node_exists = {
+        let map = registry.lock().unwrap();
+        map.contains_key(&payload.node_id)
+    };
+
+    if !node_exists {
+        println!(
+            "[BACKEND] PROOF REJECTED – Node '{}' unknown!",
+            payload.node_id
+        );
+        return StatusCode::BAD_REQUEST;
+    }
+
+    // Proof speichern
+    let mut store = proofs.lock().unwrap();
+    store.push(ProofRecord {
+        node_id: payload.node_id.clone(),
+        job_id: payload.job_id.clone(),
+        work_units: payload.work_units,
+        estimated_reward_kct: payload.estimated_reward_kct,
+        proof_hash: payload.proof_hash.clone(),
+        timestamp_unix: now,
+    });
+
+    println!(
+        "[BACKEND] Proof ACCEPTED from node={} job={} wu={}",
+        payload.node_id, payload.job_id, payload.work_units
+    );
+
+    StatusCode::OK
+}
+
+async fn list_proofs(State(proofs): State<ProofStore>) -> Json<Vec<ProofRecord>> {
+    let store = proofs.lock().unwrap();
+    Json(store.clone())
+}
+
+// -------------------------
+// HANDLER (EMISSION / INVESTOR / HEALTH)
 // -------------------------
 
 async fn health() -> &'static str {
@@ -231,6 +304,9 @@ async fn main() -> Result<()> {
     // gemeinsame Node-Registry für Heartbeats
     let registry: NodeRegistry = Arc::new(Mutex::new(HashMap::new()));
 
+    // Proof Store (In-Memory)
+    let proofs: ProofStore = Arc::new(Mutex::new(Vec::new()));
+
     let app = Router::new()
         // API-Routen
         .route("/health", get(health))
@@ -238,14 +314,20 @@ async fn main() -> Result<()> {
         .route("/investor/value_flow", get(investor_value_flow))
         .route("/node/heartbeat", post(node_heartbeat))
         .route("/nodes", get(list_nodes))
+
+        // Proof-of-Compute
+        .route("/node/proof", post(submit_proof))
+        .route("/proofs", get(list_proofs))
+
         // Root -> Dashboard
         .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
         // Dashboard unter /dashboard
         .nest_service("/dashboard", static_dir)
         // State anhängen
-        .with_state(registry);
+        .with_state(registry)
+        .with_state(proofs);
 
-    // Port lokal (8080) oder von Railway (PORT)
+    // Port lokal (8080) oder von Railway/Render (PORT)
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()
