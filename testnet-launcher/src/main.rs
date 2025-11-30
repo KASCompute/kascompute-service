@@ -313,7 +313,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // statische Dashboard-Dateien
-    let static_dir = ServeDir::new("testnet-launcher/public");
+    let static_dir = ServeDir::new("public");
 
     // State initialisieren
     let registry: NodeRegistry = Arc::new(Mutex::new(HashMap::new()));
