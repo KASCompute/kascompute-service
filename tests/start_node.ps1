@@ -3,7 +3,7 @@
 # ================================
 
 $NODE_ID    = "kct-node-01"                    # gerne anpassen (muss nur eindeutig sein)
-$BACKEND_URL = "https://kascompute-testnet.onrender.com"
+$BACKEND_URL = "https://kascompute-testnet.onrender.com/api"
 $PROFILE    = "gpu:rtx4090"                   # oder z.B. "cpu:i5-12400"
 
 while ($true) {
