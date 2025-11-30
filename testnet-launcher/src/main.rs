@@ -112,6 +112,7 @@ struct DashboardState {
     economics: EconomicState,
     active_nodes: Vec<NodeState>,
     proofs_recent: Vec<ProofEntry>,
+    proofs_total_count: usize, // 🔥 NEU: Gesamtzahl aller Proofs
 }
 
 // =======================
@@ -207,6 +208,8 @@ async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<Dashboa
         .collect();
 
     let proofs = state.proofs.lock().unwrap();
+    let proofs_total_count = proofs.len(); // 🔥 NEU
+
     let mut proofs_recent = proofs.clone();
     proofs_recent.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
     proofs_recent.truncate(10); // max 10 Zeilen PoC
@@ -216,6 +219,7 @@ async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<Dashboa
         economics,
         active_nodes,
         proofs_recent,
+        proofs_total_count, // 🔥 NEU
     })
 }
 
