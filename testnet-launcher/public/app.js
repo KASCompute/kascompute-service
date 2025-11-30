@@ -4,6 +4,179 @@
 
 const API_BASE = "/api";
 
+// ---------- i18n (EN / DE) ----------
+
+const translations = {
+  en: {
+    "header.title": "KASCompute Testnet Dashboard",
+    "header.subtitle":
+      "Emission, investor, treasury, active nodes, PoC & Node leaderboard tools — powered by your KCT model.",
+
+    "card.reward.title": "Reward Preview",
+    "card.reward.subtitle":
+      "Block reward per month m based on your testnet emission model (KCT model parameters).",
+    "card.reward.month": "Month (m):",
+    "card.reward.button": "Calculate",
+
+    "card.econ.title": "Token Economics",
+    "card.econ.subtitle":
+      "KCT price, market cap, investor and treasury value based on your live token model.",
+    "card.econ.price": "KCT price",
+    "card.econ.marketcap": "Market cap",
+    "card.econ.investor": "Investor value",
+    "card.econ.treasury": "Treasury value",
+    "card.econ.slider.price": "Price (USD) slider",
+    "card.econ.slider.inv": "Investor multiplier",
+    "card.econ.slider.treasury": "Treasury multiplier",
+
+    "card.investor.title": "Investor Value Flow",
+    "card.investor.subtitle":
+      "Post-mining cashflow simulation for potential investors KCT model parameters.",
+    "card.investor.presets": "Presets:",
+    "card.investor.preset.conservative": "Conservative",
+    "card.investor.preset.balanced": "Balanced",
+    "card.investor.preset.aggressive": "Aggressive",
+    "card.investor.fee": "Fee / Year (KCT):",
+    "card.investor.share": "Investor share:",
+    "card.investor.years": "Years:",
+    "card.investor.growth": "Growth:",
+    "card.investor.discount": "Discount:",
+    "card.investor.button": "Simulate",
+
+    "card.treasury.title": "Treasury Vesting",
+    "card.treasury.subtitle":
+      "Simple linear vesting model for the KCT Treasury, aligned with your draft tokenomics.",
+    "card.treasury.preset.label": "Quick setup:",
+    "card.treasury.preset.button": "Whitepaper default",
+    "card.treasury.total": "Total Treasury (KCT):",
+    "card.treasury.years": "Vesting duration:",
+    "card.treasury.cliff": "Cliff:",
+    "card.treasury.button": "Simulate Treasury Vesting",
+
+    "card.nodes.title": "Active Nodes",
+    "card.nodes.subtitle": "Live list of nodes connected to the KASCompute testnet.",
+    "card.nodes.online": "Online",
+    "card.nodes.refresh": "Refresh",
+    "card.nodes.empty": "Waiting for heartbeats…",
+
+    "card.proofs.title": "Proof-of-Compute",
+    "card.proofs.subtitle":
+      "Live feed of validated Proof-of-Compute submissions from your nodes.",
+    "card.proofs.th.node": "Node",
+    "card.proofs.th.job": "Job",
+    "card.proofs.th.work": "Work Units",
+    "card.proofs.th.reward": "Reward ≈ KCT",
+    "card.proofs.th.time": "Timestamp",
+    "card.proofs.empty": "Waiting for proofs…",
+
+    "card.lb.title": "Node Leaderboard",
+    "card.lb.subtitle":
+      "Ranked by submitted proofs and estimated KCT rewards. GPU nodes are highlighted.",
+    "card.lb.th.node": "Node",
+    "card.lb.th.profile": "Profile",
+    "card.lb.th.proofs": "Proofs",
+    "card.lb.th.workreward": "Work / Reward",
+    "card.lb.empty": "Waiting for node activity…",
+
+    "summary.title": "SUMMARY",
+    "summary.copy": "Copy summary",
+    "summary.toggle-json": "Show raw JSON",
+  },
+  de: {
+    "header.title": "KASCompute Testnet Dashboard",
+    "header.subtitle":
+      "Emission, Investoren, Treasury, aktive Nodes, PoC & Node-Leaderboard – gesteuert von deinem KCT-Modell.",
+
+    "card.reward.title": "Reward-Vorschau",
+    "card.reward.subtitle":
+      "Block-Reward pro Monat m auf Basis deines Testnet-Emissionsmodells (KCT-Parameter).",
+    "card.reward.month": "Monat (m):",
+    "card.reward.button": "Berechnen",
+
+    "card.econ.title": "Token-Ökonomie",
+    "card.econ.subtitle":
+      "KCT-Preis, Marktkapitalisierung, Investoren- und Treasury-Wert auf Basis deines Live-Tokenmodells.",
+    "card.econ.price": "KCT-Preis",
+    "card.econ.marketcap": "Marktkapitalisierung",
+    "card.econ.investor": "Investorenwert",
+    "card.econ.treasury": "Treasury-Wert",
+    "card.econ.slider.price": "Preis-Slider (USD)",
+    "card.econ.slider.inv": "Investoren-Multiplikator",
+    "card.econ.slider.treasury": "Treasury-Multiplikator",
+
+    "card.investor.title": "Investor Cashflow",
+    "card.investor.subtitle":
+      "Post-Mining-Cashflow-Simulation für potenzielle Investoren basierend auf KCT.",
+    "card.investor.presets": "Presets:",
+    "card.investor.preset.conservative": "Konservativ",
+    "card.investor.preset.balanced": "Ausgewogen",
+    "card.investor.preset.aggressive": "Aggressiv",
+    "card.investor.fee": "Gebühr / Jahr (KCT):",
+    "card.investor.share": "Investorenanteil:",
+    "card.investor.years": "Jahre:",
+    "card.investor.growth": "Wachstum:",
+    "card.investor.discount": "Diskontsatz:",
+    "card.investor.button": "Simulieren",
+
+    "card.treasury.title": "Treasury-Vesting",
+    "card.treasury.subtitle":
+      "Lineares Vesting-Modell für das KCT-Treasury, abgestimmt auf deine Tokenomics.",
+    "card.treasury.preset.label": "Schnellstart:",
+    "card.treasury.preset.button": "Whitepaper-Default",
+    "card.treasury.total": "Gesamtes Treasury (KCT):",
+    "card.treasury.years": "Vesting-Dauer:",
+    "card.treasury.cliff": "Cliff:",
+    "card.treasury.button": "Treasury-Vesting simulieren",
+
+    "card.nodes.title": "Aktive Nodes",
+    "card.nodes.subtitle": "Live-Liste der mit dem KASCompute-Testnet verbundenen Nodes.",
+    "card.nodes.online": "Online",
+    "card.nodes.refresh": "Aktualisieren",
+    "card.nodes.empty": "Warte auf Heartbeats…",
+
+    "card.proofs.title": "Proof-of-Compute",
+    "card.proofs.subtitle":
+      "Live-Feed der validierten Proof-of-Compute-Einreichungen deiner Nodes.",
+    "card.proofs.th.node": "Node",
+    "card.proofs.th.job": "Job",
+    "card.proofs.th.work": "Work Units",
+    "card.proofs.th.reward": "Reward ≈ KCT",
+    "card.proofs.th.time": "Zeitstempel",
+    "card.proofs.empty": "Warte auf Proofs…",
+
+    "card.lb.title": "Node-Leaderboard",
+    "card.lb.subtitle":
+      "Sortiert nach eingereichten Proofs und geschätzten KCT-Rewards. GPU-Nodes sind hervorgehoben.",
+    "card.lb.th.node": "Node",
+    "card.lb.th.profile": "Profil",
+    "card.lb.th.proofs": "Proofs",
+    "card.lb.th.workreward": "Work / Reward",
+    "card.lb.empty": "Warte auf Node-Aktivität…",
+
+    "summary.title": "ZUSAMMENFASSUNG",
+    "summary.copy": "Zusammenfassung kopieren",
+    "summary.toggle-json": "Roh-JSON anzeigen",
+  },
+};
+
+let currentLang = "en";
+
+function applyLanguage(lang) {
+  currentLang = lang;
+  const dict = translations[lang] || translations.en;
+  document.documentElement.setAttribute("data-lang", lang);
+
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n");
+    const text = dict[key];
+    if (text) {
+      // Label-Spezialfall: falls Kinder (Badge) drin sind, nur den Textknoten ersetzen wäre kompliziert;
+      // hier reicht für dein UI: kompletten Text ersetzen.
+      el.textContent = text;
+    }
+  });
+}
+
 // ---------- Helper ----------
 
 async function fetchJson(path) {
@@ -71,9 +244,7 @@ function renderEconomicsOutputs() {
     const price = 1.0;
     const capTokens = baseEconomics.circulating_supply_kct ?? 0;
     const investorTokens =
-      econLastPriceUsd > 0
-        ? econLastInvestorUsd / econLastPriceUsd
-        : 0;
+      econLastPriceUsd > 0 ? econLastInvestorUsd / econLastPriceUsd : 0;
     const treasuryTokens = baseEconomics.treasury_balance_kct ?? 0;
 
     setText("kct-price", price.toFixed(4) + " KCT");
@@ -88,10 +259,7 @@ function renderEconomicsOutputs() {
   const inv = econLastInvestorUsd * fx;
   const tre = econLastTreasuryUsd * fx;
 
-  setText(
-    "kct-price",
-    symbol + price.toFixed(4)
-  );
+  setText("kct-price", symbol + price.toFixed(4));
   setText(
     "market-cap",
     symbol +
@@ -675,7 +843,7 @@ function updateActiveNodesCard(activeNodes) {
   if (!activeNodes || activeNodes.length === 0) {
     const li = document.createElement("li");
     li.className = "node-empty";
-    li.textContent = "Waiting for heartbeats…";
+    li.textContent = translations[currentLang]["card.nodes.empty"];
     listEl.appendChild(li);
     return;
   }
@@ -703,7 +871,7 @@ function updateProofsFeed(proofs) {
   if (!proofs || proofs.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "poc-empty-row";
-    tr.innerHTML = `<td colspan="5">Waiting for proofs…</td>`;
+    tr.innerHTML = `<td colspan="5">${translations[currentLang]["card.proofs.empty"]}</td>`;
     tbody.appendChild(tr);
     return;
   }
@@ -735,7 +903,7 @@ function updateNodeLeaderboard(proofs, activeNodes) {
   if (!proofs || proofs.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "lb-empty-row";
-    tr.innerHTML = `<td colspan="5">Waiting for node activity…</td>`;
+    tr.innerHTML = `<td colspan="5">${translations[currentLang]["card.lb.empty"]}</td>`;
     tbody.appendChild(tr);
     return;
   }
@@ -847,12 +1015,14 @@ function attachGlobalListeners() {
   const btnLangEn = document.getElementById("btn-lang-en");
   const btnLangDe = document.getElementById("btn-lang-de");
   if (btnLangEn && btnLangDe) {
-    btnLangEn.addEventListener("click", () =>
-      togglePillGroup("btn-lang-en", ["btn-lang-en", "btn-lang-de"])
-    );
-    btnLangDe.addEventListener("click", () =>
-      togglePillGroup("btn-lang-de", ["btn-lang-en", "btn-lang-de"])
-    );
+    btnLangEn.addEventListener("click", () => {
+      togglePillGroup("btn-lang-en", ["btn-lang-en", "btn-lang-de"]);
+      applyLanguage("en");
+    });
+    btnLangDe.addEventListener("click", () => {
+      togglePillGroup("btn-lang-de", ["btn-lang-en", "btn-lang-de"]);
+      applyLanguage("de");
+    });
   }
 
   const btnCurKct = document.getElementById("btn-cur-kct");
@@ -909,6 +1079,7 @@ function attachGlobalListeners() {
 // ================= Init =================
 
 document.addEventListener("DOMContentLoaded", () => {
+  applyLanguage("en"); // Default
   attachRewardUI();
   attachInvestorUI();
   attachTreasuryUI();
