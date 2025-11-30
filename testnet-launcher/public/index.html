@@ -8,21 +8,19 @@
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
 
 <header class="header">
   <div class="header-left">
-    <!-- Dein PNG-Logo -->
     <img src="logo.png" alt="KASCompute" class="logo" />
+
     <div class="title-wrap">
-      <h1 class="title" data-i18n="header.title">
-        KASCompute Testnet Dashboard
-      </h1>
-      <p class="subtitle" data-i18n="header.subtitle">
+      <h1 class="title">KASCompute Testnet Dashboard</h1>
+      <p class="subtitle">
         Emission, investor, treasury, active nodes, PoC & Node leaderboard tools — powered by your KCT model.
       </p>
 
-      <!-- Header-Stats -->
       <div id="top-stats">
         <span class="stat-badge" id="stat-nodes">Nodes: 0</span>
         <span class="stat-badge" id="stat-proofs">Proofs: 0</span>
@@ -31,9 +29,7 @@
   </div>
 
   <div class="header-right">
-    <div id="api-status" class="status-pill" title="Uses /health endpoint on your local testnet launcher">
-      Checking API…
-    </div>
+    <div id="api-status" class="status-pill">Checking API…</div>
 
     <div class="pill-group">
       <button id="btn-lang-en" class="pill pill-active">EN</button>
@@ -52,201 +48,124 @@
 
 <main class="container">
 
-  <!-- REWARD PREVIEW -->
+  <!-- Reward Preview -->
   <section class="card">
     <div class="card-header">
-      <h2 data-i18n="card.reward.title">
-        <span class="card-icon">⚡</span>
-        Reward Preview
-      </h2>
-      <p class="card-subtitle" data-i18n="card.reward.subtitle">
-        Block reward per month m based on your testnet emission model (KCT model parameters).
-      </p>
+      <h2><span class="card-icon">⚡</span> Reward Preview</h2>
     </div>
 
+    <p class="card-subtitle">Block reward per month m based on your testnet model.</p>
+
     <div class="field">
-      <label data-i18n="card.reward.month">
-        Month (m):
-        <span id="month-label" class="field-badge">12</span>
+      <label>
+        Month (m): <span id="month-label" class="field-badge">12</span>
       </label>
       <input id="month" type="range" min="1" max="168" value="12" />
     </div>
 
-    <button id="btn-reward" class="action-btn" data-i18n="card.reward.button">
-      Calculate
-    </button>
+    <button id="btn-reward" class="action-btn">Calculate</button>
 
-    <div class="summary-title" data-i18n="summary.title">SUMMARY</div>
+    <div class="summary-title">SUMMARY</div>
     <pre id="reward-summary" class="summary-box"></pre>
 
     <div class="summary-actions">
-      <button id="btn-reward-copy" class="json-btn secondary-btn" data-i18n="summary.copy">
-        Copy summary
-      </button>
-      <button id="btn-reward-json" class="json-btn" data-i18n="summary.toggle-json">
-        Show raw JSON
-      </button>
+      <button id="btn-reward-copy" class="json-btn secondary-btn">Copy summary</button>
+      <button id="btn-reward-json" class="json-btn">Show raw JSON</button>
     </div>
+
     <pre id="reward-json" class="json-box" style="display:none;"></pre>
   </section>
 
-  <!-- TOKEN ECONOMICS (NEUES PANEL für KCT/EUR/USD) -->
+  <!-- Token Economics -->
   <section class="card">
     <div class="card-header">
-      <h2 data-i18n="card.econ.title">
-        <span class="card-icon">💠</span>
-        Token Economics
-      </h2>
-      <p class="card-subtitle" data-i18n="card.econ.subtitle">
-        KCT price, market cap, investor and treasury value based on your live token model.
-      </p>
+      <h2><span class="card-icon">💠</span> Token Economics</h2>
+    </div>
+
+    <p class="card-subtitle">Live KCT economics simulation.</p>
+
+    <div class="field">
+      <label>KCT price</label>
+      <div id="kct-price" class="summary-box"></div>
     </div>
 
     <div class="field">
-      <label data-i18n="card.econ.price">KCT price</label>
-      <div id="kct-price" class="summary-box" style="max-height:40px;overflow:hidden;">
-        -
-      </div>
+      <label>Market cap</label>
+      <div id="market-cap" class="summary-box"></div>
     </div>
 
     <div class="field">
-      <label data-i18n="card.econ.marketcap">Market cap</label>
-      <div id="market-cap" class="summary-box" style="max-height:40px;overflow:hidden;">
-        -
-      </div>
+      <label>Investor value</label>
+      <div id="investor-value" class="summary-box"></div>
     </div>
 
     <div class="field">
-      <label data-i18n="card.econ.investor">Investor value</label>
-      <div id="investor-value" class="summary-box" style="max-height:40px;overflow:hidden;">
-        -
-      </div>
+      <label>Treasury value</label>
+      <div id="treasury-value" class="summary-box"></div>
     </div>
 
     <div class="field">
-      <label data-i18n="card.econ.treasury">Treasury value</label>
-      <div id="treasury-value" class="summary-box" style="max-height:40px;overflow:hidden;">
-        -
-      </div>
+      <label>Price (USD) slider <span id="kct-price-slider-value" class="field-badge">0.0100 $</span></label>
+      <input id="kct-price-slider" type="range" min="0.0001" max="1" step="0.0001" value="0.01" />
     </div>
 
     <div class="field">
-      <label data-i18n="card.econ.slider.price">
-        Price (USD) slider
-        <span id="kct-price-slider-value" class="field-badge">0.0000 $</span>
-      </label>
-      <input
-        id="kct-price-slider"
-        type="range"
-        min="0.0001"
-        max="1"
-        step="0.0001"
-        value="0.01"
-      />
+      <label>Investor multiplier <span id="investor-multiplier-slider-value" class="field-badge">x1.00</span></label>
+      <input id="investor-multiplier-slider" type="range" min="0.1" max="5" step="0.1" value="1" />
     </div>
 
     <div class="field">
-      <label data-i18n="card.econ.slider.inv">
-        Investor multiplier
-        <span id="investor-multiplier-slider-value" class="field-badge">x1.00</span>
-      </label>
-      <input
-        id="investor-multiplier-slider"
-        type="range"
-        min="0.1"
-        max="5"
-        step="0.1"
-        value="1"
-      />
+      <label>Treasury multiplier <span id="treasury-multiplier-slider-value" class="field-badge">x1.00</span></label>
+      <input id="treasury-multiplier-slider" type="range" min="0.1" max="5" step="0.1" value="1" />
     </div>
 
-    <div class="field">
-      <label data-i18n="card.econ.slider.treasury">
-        Treasury multiplier
-        <span id="treasury-multiplier-slider-value" class="field-badge">x1.00</span>
-      </label>
-      <input
-        id="treasury-multiplier-slider"
-        type="range"
-        min="0.1"
-        max="5"
-        step="0.1"
-        value="1"
-      />
-    </div>
   </section>
 
-  <!-- INVESTOR VALUE FLOW -->
+  <!-- Investor Value Flow -->
   <section class="card">
     <div class="card-header">
-      <h2 data-i18n="card.investor.title">
-        <span class="card-icon">📈</span>
-        Investor Value Flow
-      </h2>
-      <p class="card-subtitle" data-i18n="card.investor.subtitle">
-        Post-mining cashflow simulation for potential investors KCT model parameters.
-      </p>
+      <h2><span class="card-icon">📈</span> Investor Value Flow</h2>
     </div>
 
+    <p class="card-subtitle">Simulated investor cashflow.</p>
+
     <div class="preset-row">
-      <span class="preset-label" data-i18n="card.investor.presets">Presets:</span>
-      <button id="inv-preset-conservative" class="preset-btn" data-i18n="card.investor.preset.conservative">
-        Conservative
-      </button>
-      <button id="inv-preset-balanced" class="preset-btn" data-i18n="card.investor.preset.balanced">
-        Balanced
-      </button>
-      <button id="inv-preset-aggressive" class="preset-btn" data-i18n="card.investor.preset.aggressive">
-        Aggressive
-      </button>
+      <span class="preset-label">Presets:</span>
+      <button id="inv-preset-conservative" class="preset-btn">Conservative</button>
+      <button id="inv-preset-balanced" class="preset-btn">Balanced</button>
+      <button id="inv-preset-aggressive" class="preset-btn">Aggressive</button>
     </div>
 
     <div class="field">
-      <label data-i18n="card.investor.fee">
-        Fee / Year (<span data-unit-badge>KCT</span>):
-      </label>
+      <label>Fee / Year (KCT):</label>
       <input id="fee" type="number" value="0" />
     </div>
 
     <div class="field">
-      <label data-i18n="card.investor.share">
-        Investor share:
-        <span id="investor-label" class="field-badge">0.00</span>
-      </label>
+      <label>Investor share: <span id="investor-label" class="field-badge">0.00</span></label>
       <input id="investor" type="range" min="0" max="1" step="0.01" value="0" />
     </div>
 
     <div class="field">
-      <label data-i18n="card.investor.years">
-        Years:
-        <span id="years-label" class="field-badge">10</span>
-      </label>
-      <input id="years" type="range" min="1" max="30" step="1" value="10" />
+      <label>Years: <span id="years-label" class="field-badge">10</span></label>
+      <input id="years" type="range" min="1" max="30" value="10" />
     </div>
 
     <div class="field field-inline">
       <div>
-        <label data-i18n="card.investor.growth">
-          Growth:
-          <span id="growth-label" class="field-badge">0.00</span>
-        </label>
+        <label>Growth: <span id="growth-label" class="field-badge">0.00</span></label>
         <input id="growth" type="range" min="0" max="1" step="0.01" value="0" />
       </div>
 
       <div>
-        <label data-i18n="card.investor.discount">
-          Discount:
-          <span id="discount-label" class="field-badge">0.00</span>
-        </label>
+        <label>Discount: <span id="discount-label" class="field-badge">0.00</span></label>
         <input id="discount" type="range" min="0" max="1" step="0.01" value="0" />
       </div>
     </div>
 
-    <button id="btn-investor" class="action-btn" data-i18n="card.investor.button">
-      Simulate
-    </button>
+    <button id="btn-investor" class="action-btn">Simulate</button>
 
-    <div class="summary-title" data-i18n="summary.title">SUMMARY</div>
+    <div class="summary-title">SUMMARY</div>
     <pre id="investor-summary" class="summary-box"></pre>
 
     <div class="chart-wrap">
@@ -254,63 +173,43 @@
     </div>
 
     <div class="summary-actions">
-      <button id="btn-investor-copy" class="json-btn secondary-btn" data-i18n="summary.copy">
-        Copy summary
-      </button>
-      <button id="btn-investor-json" class="json-btn" data-i18n="summary.toggle-json">
-        Show raw JSON
-      </button>
+      <button id="btn-investor-copy" class="json-btn secondary-btn">Copy summary</button>
+      <button id="btn-investor-json" class="json-btn">Show raw JSON</button>
     </div>
+
     <pre id="investor-json" class="json-box" style="display:none;"></pre>
   </section>
 
-  <!-- TREASURY VESTING (3. PANEL) -->
+  <!-- Treasury Vesting -->
   <section class="card">
     <div class="card-header">
-      <h2 data-i18n="card.treasury.title">
-        <span class="card-icon">🏦</span>
-        Treasury Vesting
-      </h2>
-      <p class="card-subtitle" data-i18n="card.treasury.subtitle">
-        Simple linear vesting model for the KCT Treasury, aligned with your draft tokenomics.
-      </p>
+      <h2><span class="card-icon">🏦</span> Treasury Vesting</h2>
     </div>
 
+    <p class="card-subtitle">Linear vesting model.</p>
+
     <div class="preset-row">
-      <span class="preset-label" data-i18n="card.treasury.preset.label">Quick setup:</span>
-      <button id="btn-treasury-preset" class="preset-btn wide" data-i18n="card.treasury.preset.button">
-        Whitepaper default
-      </button>
+      <button id="btn-treasury-preset" class="preset-btn wide">Whitepaper default</button>
     </div>
 
     <div class="field">
-      <label data-i18n="card.treasury.total">
-        Total Treasury (KCT):
-      </label>
+      <label>Total Treasury (KCT):</label>
       <input id="treasury-total" type="number" value="1000000000" />
     </div>
 
     <div class="field">
-      <label data-i18n="card.treasury.years">
-        Vesting duration:
-        <span id="treasury-years-label" class="field-badge">14</span> years
-      </label>
-      <input id="treasury-years" type="range" min="1" max="14" step="1" value="14" />
+      <label>Vesting duration: <span id="treasury-years-label" class="field-badge">14</span> years</label>
+      <input id="treasury-years" type="range" min="1" max="14" value="14" />
     </div>
 
     <div class="field">
-      <label data-i18n="card.treasury.cliff">
-        Cliff:
-        <span id="treasury-cliff-label" class="field-badge">0</span> months
-      </label>
-      <input id="treasury-cliff" type="range" min="0" max="24" step="1" value="0" />
+      <label>Cliff: <span id="treasury-cliff-label" class="field-badge">0</span> months</label>
+      <input id="treasury-cliff" type="range" min="0" max="24" value="0" />
     </div>
 
-    <button id="btn-treasury" class="action-btn" data-i18n="card.treasury.button">
-      Simulate Treasury Vesting
-    </button>
+    <button id="btn-treasury" class="action-btn">Simulate Treasury Vesting</button>
 
-    <div class="summary-title" data-i18n="summary.title">SUMMARY</div>
+    <div class="summary-title">SUMMARY</div>
     <pre id="treasury-summary" class="summary-box"></pre>
 
     <div class="chart-wrap">
@@ -318,117 +217,102 @@
     </div>
 
     <div class="summary-actions">
-      <button id="btn-treasury-copy" class="json-btn secondary-btn" data-i18n="summary.copy">
-        Copy summary
-      </button>
+      <button id="btn-treasury-copy" class="json-btn secondary-btn">Copy summary</button>
     </div>
+
   </section>
 
-  <!-- ACTIVE NODES PANEL -->
+  <!-- Active Nodes -->
   <section class="card">
     <div class="card-header">
-      <h2 data-i18n="card.nodes.title">
-        <span class="card-icon">🛰️</span>
-        Active Nodes
-      </h2>
-      <p class="card-subtitle" data-i18n="card.nodes.subtitle">
-        Live list of nodes connected to the KASCompute testnet.
-      </p>
+      <h2><span class="card-icon">🛰️</span> Active Nodes</h2>
     </div>
+
+    <p class="card-subtitle">Live node list.</p>
 
     <div class="stats-row">
       <div class="stat">
-        <div class="stat-label" data-i18n="card.nodes.online">Online</div>
+        <div class="stat-label">Online</div>
         <div id="node-count" class="stat-value">0</div>
       </div>
-      <button id="btn-refresh-nodes" class="pill-btn" data-i18n="card.nodes.refresh">
-        Refresh
-      </button>
+      <button id="btn-refresh-nodes" class="pill-btn">Refresh</button>
     </div>
 
     <ul id="node-list" class="node-list">
-      <li class="node-empty" data-i18n="card.nodes.empty">Waiting for heartbeats…</li>
+      <li class="node-empty">Waiting for heartbeats…</li>
     </ul>
   </section>
-  
-  <!-- PROOF OF COMPUTE FEED -->
+
+  <!-- Proof-of-Compute -->
   <section class="card">
     <div class="card-header">
-      <h2 data-i18n="card.proofs.title">
-        <span class="card-icon">🧮</span>
-        Proof-of-Compute
-      </h2>
-      <p class="card-subtitle" data-i18n="card.proofs.subtitle">
-        Live feed of validated Proof-of-Compute submissions from your nodes.
-      </p>
+      <h2><span class="card-icon">🧮</span> Proof-of-Compute</h2>
+    </div>
+
+    <p class="card-subtitle">Live proof feed.</p>
+
+    <div class="field">
+      <label>Show PoC entries:</label>
+      <select id="poc-limit">
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="250">250</option>
+        <option value="999999">ALL</option>
+      </select>
     </div>
 
     <table class="poc-table">
       <thead>
         <tr>
-          <th data-i18n="card.proofs.th.node">Node</th>
-          <th data-i18n="card.proofs.th.job">Job</th>
-          <th data-i18n="card.proofs.th.work">Work Units</th>
-          <th data-i18n="card.proofs.th.reward">Reward ≈ KCT</th>
-          <th data-i18n="card.proofs.th.time">Timestamp</th>
+          <th>Node</th>
+          <th>Job</th>
+          <th>Work Units</th>
+          <th>Reward ≈ KCT</th>
+          <th>Time</th>
         </tr>
       </thead>
+
       <tbody id="proofs-body">
-        <tr class="poc-empty-row">
-          <td colspan="5" data-i18n="card.proofs.empty">Waiting for proofs…</td>
-        </tr>
+        <tr class="poc-empty-row"><td colspan="5">Waiting for proofs…</td></tr>
       </tbody>
     </table>
+
   </section>
 
-  <!-- NODE LEADERBOARD -->
+  <!-- Node Leaderboard -->
   <section class="card">
     <div class="card-header">
-      <h2 data-i18n="card.lb.title">
-        <span class="card-icon">🏁</span>
-        Node Leaderboard
-      </h2>
-      <p class="card-subtitle" data-i18n="card.lb.subtitle">
-        Ranked by submitted proofs and estimated KCT rewards. GPU nodes are highlighted.
-      </p>
+      <h2><span class="card-icon">🏁</span> Node Leaderboard</h2>
+    </div>
+
+    <p class="card-subtitle">Ranked by proofs & rewards.</p>
+
+    <div class="field">
+      <label>Leaderboard entries: <span id="lb-limit-label">10</span></label>
+      <input type="range" id="lb-limit" min="5" max="50" step="5" value="10">
     </div>
 
     <table class="leaderboard-table">
       <thead>
         <tr>
           <th>#</th>
-          <th data-i18n="card.lb.th.node">Node</th>
-          <th data-i18n="card.lb.th.profile">Profile</th>
-          <th data-i18n="card.lb.th.proofs">Proofs</th>
-          <th data-i18n="card.lb.th.workreward">Work / Reward</th>
+          <th>Node</th>
+          <th>Profile</th>
+          <th>Proofs</th>
+          <th>Work / KCT</th>
         </tr>
       </thead>
+
       <tbody id="leaderboard-body">
-        <tr class="lb-empty-row">
-          <td colspan="5" data-i18n="card.lb.empty">Waiting for node activity…</td>
-        </tr>
+        <tr class="lb-empty-row"><td colspan="5">Waiting for node activity…</td></tr>
       </tbody>
     </table>
   </section>
 
+
 </main>
 
-<script>
-  // Environment-Switch für API-Base:
-  // - lokal: immer 127.0.0.1:8080
-  // - live (Render / Domain): gleiche Origin wie das Dashboard
-  (function () {
-    const host = window.location.hostname;
-
-    if (host === "127.0.0.1" || host === "localhost") {
-      // Lokaler Dev-Mode
-      window.KCT_API_BASE = "http://127.0.0.1:8080";
-    } else {
-      // Alles, was nicht lokal ist → Render / Domain
-      window.KCT_API_BASE = window.location.origin;
-    }
-  })();
-</script>
 <script src="app.js"></script>
 
 </body>
