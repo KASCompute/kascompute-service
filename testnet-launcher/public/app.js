@@ -2,7 +2,6 @@
 // KASCompute Testnet Dashboard
 // ==============================
 
-// Backend liegt unter /api
 const API_BASE = "/api";
 
 // ---------- Helper ----------
@@ -35,27 +34,189 @@ function formatUsd(n) {
   );
 }
 
-// ================= Emission / Economics (vom Backend) =================
+// ================= Emission / Economics =================
 
-let baseEconomics = null;
 let emissionState = null;
+let baseEconomics = null;
 
-function applyEmissionAndEconomics(data) {
-  emissionState = data.emission || null;
-  const econ = data.economics || null;
-  baseEconomics = econ;
+// Currency-State
+let currentCurrency = "USD";
+let econLastPriceUsd = null;
+let econLastMarketCapUsd = null;
+let econLastInvestorUsd = null;
+let econLastTreasuryUsd = null;
 
-  // Header-Stats
-  const nodesCount = (data.active_nodes || []).length;
-  const proofsCount = (data.proofs_recent || []).length;
-  setText("stat-nodes", `Nodes: ${nodesCount}`);
-  setText("stat-proofs", `Proofs: ${proofsCount}`);
+function renderEconomicsOutputs() {
+  if (!baseEconomics) return;
+  if (
+    econLastPriceUsd == null ||
+    econLastMarketCapUsd == null ||
+    econLastInvestorUsd == null ||
+    econLastTreasuryUsd == null
+  ) {
+    return;
+  }
 
-  // KCT Price + Treasury etc. (falls du DOM-Elemente noch ergänzen willst)
-  // Wir nutzen baseEconomics später für Investor/Treasury-Rechner.
+  const fxEur = 0.92; // grober Kurs
+  let symbol = "$";
+  let fx = 1;
+
+  if (currentCurrency === "EUR") {
+    symbol = "€";
+    fx = fxEur;
+  }
+
+  if (currentCurrency === "KCT") {
+    // alles in Token anzeigen
+    const price = 1.0;
+    const capTokens = baseEconomics.circulating_supply_kct ?? 0;
+    const investorTokens =
+      econLastPriceUsd > 0
+        ? econLastInvestorUsd / econLastPriceUsd
+        : 0;
+    const treasuryTokens = baseEconomics.treasury_balance_kct ?? 0;
+
+    setText("kct-price", price.toFixed(4) + " KCT");
+    setText("market-cap", formatNumber(capTokens) + " KCT");
+    setText("investor-value", formatNumber(investorTokens) + " KCT");
+    setText("treasury-value", formatNumber(treasuryTokens) + " KCT");
+    return;
+  }
+
+  const price = econLastPriceUsd * fx;
+  const mc = econLastMarketCapUsd * fx;
+  const inv = econLastInvestorUsd * fx;
+  const tre = econLastTreasuryUsd * fx;
+
+  setText(
+    "kct-price",
+    symbol + price.toFixed(4)
+  );
+  setText(
+    "market-cap",
+    symbol +
+      mc.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+  );
+  setText(
+    "investor-value",
+    symbol +
+      inv.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+  );
+  setText(
+    "treasury-value",
+    symbol +
+      tre.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+  );
 }
 
-// ================= Reward Preview (linkes Panel) =================
+function updateEmissionCardsFromState() {
+  if (!emissionState) return;
+  setText("total-supply", formatNumber(emissionState.total_supply_kct));
+  setText("mined-supply", formatNumber(emissionState.mined_supply_kct));
+  setText("remaining-supply", formatNumber(emissionState.remaining_supply_kct));
+  setText("emission-month", emissionState.emission_month ?? "-");
+  setText(
+    "block-reward",
+    emissionState.current_block_reward_kct.toFixed(4) + " KCT"
+  );
+  setText(
+    "monthly-decay",
+    emissionState.monthly_decay_pct.toFixed(2) + " %"
+  );
+}
+
+function updateEconomicsCards(ec) {
+  if (!ec) return;
+  baseEconomics = ec;
+
+  const priceSlider = document.getElementById("kct-price-slider");
+  const priceLabel = document.getElementById("kct-price-slider-value");
+  const invSlider = document.getElementById("investor-multiplier-slider");
+  const invLabel = document.getElementById("investor-multiplier-slider-value");
+  const treSlider = document.getElementById("treasury-multiplier-slider");
+  const treLabel = document.getElementById("treasury-multiplier-slider-value");
+
+  if (priceSlider && priceLabel) {
+    priceSlider.value = ec.kct_price_usd;
+    priceLabel.textContent = ec.kct_price_usd.toFixed(4) + " $";
+  }
+  if (invSlider && invLabel) {
+    invSlider.value = 1.0;
+    invLabel.textContent = "x1.00";
+  }
+  if (treSlider && treLabel) {
+    treSlider.value = 1.0;
+    treLabel.textContent = "x1.00";
+  }
+
+  econLastPriceUsd = ec.kct_price_usd;
+  econLastMarketCapUsd = ec.market_cap_usd;
+  econLastInvestorUsd = ec.investor_value_usd;
+  econLastTreasuryUsd = ec.treasury_value_usd;
+
+  renderEconomicsOutputs();
+}
+
+function recomputeFromSliders() {
+  if (!baseEconomics) return;
+
+  const priceSlider = document.getElementById("kct-price-slider");
+  const priceLabel = document.getElementById("kct-price-slider-value");
+  const invSlider = document.getElementById("investor-multiplier-slider");
+  const invLabel = document.getElementById("investor-multiplier-slider-value");
+  const treSlider = document.getElementById("treasury-multiplier-slider");
+  const treLabel = document.getElementById("treasury-multiplier-slider-value");
+
+  let price = baseEconomics.kct_price_usd;
+  let invMult = 1.0;
+  let treMult = 1.0;
+
+  if (priceSlider) {
+    const v = parseFloat(priceSlider.value);
+    if (!isNaN(v)) {
+      price = v;
+      if (priceLabel) priceLabel.textContent = v.toFixed(4) + " $";
+    }
+  }
+  if (invSlider) {
+    const v = parseFloat(invSlider.value);
+    if (!isNaN(v)) {
+      invMult = v;
+      if (invLabel) invLabel.textContent = "x" + v.toFixed(2);
+    }
+  }
+  if (treSlider) {
+    const v = parseFloat(treSlider.value);
+    if (!isNaN(v)) {
+      treMult = v;
+      if (treLabel) treLabel.textContent = "x" + v.toFixed(2);
+    }
+  }
+
+  const baseSupply = baseEconomics.circulating_supply_kct ?? 0;
+  const marketCap = price * baseSupply;
+  const investorValue = marketCap * invMult;
+  const treasuryValue =
+    price * (baseEconomics.treasury_balance_kct ?? 0) * treMult;
+
+  econLastPriceUsd = price;
+  econLastMarketCapUsd = marketCap;
+  econLastInvestorUsd = investorValue;
+  econLastTreasuryUsd = treasuryValue;
+
+  renderEconomicsOutputs();
+}
+
+// ================= Reward Preview =================
 
 function attachRewardUI() {
   const monthSlider = document.getElementById("month");
@@ -74,19 +235,19 @@ function attachRewardUI() {
 
   function computeRewardSummary() {
     if (!emissionState) {
-      summaryBox.textContent = "Emission state not loaded from backend yet.";
+      if (summaryBox)
+        summaryBox.textContent =
+          "Emission state not loaded from backend yet.";
       return;
     }
 
     const m = parseInt(monthSlider ? monthSlider.value : "12", 10) || 12;
-
-    // Simple Modell: 1 % monthly decay, 1 Block/Min, Reward(t) = R0 * 0.99^(t-1)
     const r0 = emissionState.current_block_reward_kct || 200.0;
     const decay = (emissionState.monthly_decay_pct || 1.0) / 100.0;
     const factor = 1.0 - decay;
     const rewardThisMonth = r0 * Math.pow(factor, m - 1);
 
-    const blocksPerMonth = 30 * 24 * 60; // grob
+    const blocksPerMonth = 30 * 24 * 60;
     const monthlyEmission = rewardThisMonth * blocksPerMonth;
 
     const json = {
@@ -105,14 +266,14 @@ function attachRewardUI() {
           maximumFractionDigits: 2,
         })} KCT`;
     }
-
     if (jsonBox) {
       jsonBox.textContent = JSON.stringify(json, null, 2);
     }
   }
 
   if (btnReward && summaryBox) {
-    btnReward.addEventListener("click", () => {
+    btnReward.addEventListener("click", (e) => {
+      e.preventDefault();
       computeRewardSummary();
     });
   }
@@ -140,7 +301,7 @@ function attachRewardUI() {
   }
 }
 
-// ================= Investor Value Flow (2. Panel) =================
+// ================= Investor Value Flow =================
 
 let investorChartInstance = null;
 
@@ -163,7 +324,6 @@ function attachInvestorUI() {
   const presetBalanced = document.getElementById("inv-preset-balanced");
   const presetAggressive = document.getElementById("inv-preset-aggressive");
 
-  // Slider-Labels
   if (investorSlider && investorLabel) {
     investorSlider.addEventListener("input", () => {
       investorLabel.textContent = parseFloat(investorSlider.value).toFixed(2);
@@ -185,9 +345,9 @@ function attachInvestorUI() {
     });
   }
 
-  // Presets
   function applyPreset(type) {
-    if (!feeInput || !investorSlider || !growthSlider || !discountSlider) return;
+    if (!feeInput || !investorSlider || !growthSlider || !discountSlider)
+      return;
     switch (type) {
       case "conservative":
         feeInput.value = "100000";
@@ -214,25 +374,37 @@ function attachInvestorUI() {
   }
 
   if (presetConservative) {
-    presetConservative.addEventListener("click", () => applyPreset("conservative"));
+    presetConservative.addEventListener("click", () =>
+      applyPreset("conservative")
+    );
   }
   if (presetBalanced) {
-    presetBalanced.addEventListener("click", () => applyPreset("balanced"));
+    presetBalanced.addEventListener("click", () =>
+      applyPreset("balanced")
+    );
   }
   if (presetAggressive) {
-    presetAggressive.addEventListener("click", () => applyPreset("aggressive"));
+    presetAggressive.addEventListener("click", () =>
+      applyPreset("aggressive")
+    );
   }
 
-  // Simulation (rein client-seitig, kein HTTP)
   function simulateInvestor() {
-    if (!feeInput || !investorSlider || !yearsSlider || !growthSlider || !discountSlider) return;
+    if (
+      !feeInput ||
+      !investorSlider ||
+      !yearsSlider ||
+      !growthSlider ||
+      !discountSlider
+    )
+      return;
     if (!summaryBox || !jsonBox) return;
 
     const feeYear = parseFloat(feeInput.value || "0");
     const investorShare = parseFloat(investorSlider.value || "0");
     const years = parseInt(yearsSlider.value || "0", 10);
-    const growth = parseFloat(growthSlider.value || "0"); // 0..1
-    const discount = parseFloat(discountSlider.value || "0"); // 0..1
+    const growth = parseFloat(growthSlider.value || "0");
+    const discount = parseFloat(discountSlider.value || "0");
 
     if (!feeYear || !years || investorShare <= 0) {
       summaryBox.textContent = "Set fee, investor share and years.";
@@ -268,12 +440,15 @@ function attachInvestorUI() {
     summaryBox.textContent =
       `Total cashflow (undiscounted): ${totalCash.toFixed(2)} KCT\n` +
       `NPV (discounted): ${npv.toFixed(2)} KCT\n` +
-      `Years: ${years}, Share: ${(investorShare * 100).toFixed(1)} %, ` +
-      `Growth: ${(growth * 100).toFixed(1)} %, Discount: ${(discount * 100).toFixed(1)} %`;
+      `Years: ${years}, Share: ${(investorShare * 100).toFixed(
+        1
+      )} %, ` +
+      `Growth: ${(growth * 100).toFixed(
+        1
+      )} %, Discount: ${(discount * 100).toFixed(1)} %`;
 
     jsonBox.textContent = JSON.stringify(result, null, 2);
 
-    // Chart.js
     const canvas = document.getElementById("investorChart");
     if (canvas && window.Chart) {
       const ctx = canvas.getContext("2d");
@@ -284,32 +459,36 @@ function attachInvestorUI() {
           {
             label: "Investor cashflow (KCT/year)",
             data: cashflows,
+            tension: 0.35,
+            fill: false,
           },
         ],
       };
+      const options = {
+        plugins: { legend: { display: true } },
+        scales: {
+          x: { display: true, grid: { display: false } },
+          y: { display: true, beginAtZero: true },
+        },
+      };
+
       if (!investorChartInstance) {
         investorChartInstance = new Chart(ctx, {
           type: "line",
           data,
-          options: {
-            plugins: {
-              legend: { display: true },
-            },
-            scales: {
-              x: { display: true },
-              y: { display: true },
-            },
-          },
+          options,
         });
       } else {
         investorChartInstance.data = data;
+        investorChartInstance.options = options;
         investorChartInstance.update();
       }
     }
   }
 
   if (btnSim) {
-    btnSim.addEventListener("click", () => {
+    btnSim.addEventListener("click", (e) => {
+      e.preventDefault();
       simulateInvestor();
     });
   }
@@ -337,7 +516,7 @@ function attachInvestorUI() {
   }
 }
 
-// ================= Treasury Vesting (3. Panel) =================
+// ================= Treasury Vesting =================
 
 let treasuryChartInstance = null;
 
@@ -381,14 +560,16 @@ function attachTreasuryUI() {
     const cliffMonths = parseInt(cliffSlider.value || "0", 10);
 
     if (!total || !years) {
-      summaryBox.textContent = "Set total treasury and vesting duration.";
+      summaryBox.textContent =
+        "Set total treasury and vesting duration.";
       return;
     }
 
     const monthsTotal = years * 12;
     const monthsVesting = Math.max(0, monthsTotal - cliffMonths);
     if (monthsVesting <= 0) {
-      summaryBox.textContent = "Cliff is equal or longer than vesting period.";
+      summaryBox.textContent =
+        "Cliff is equal or longer than vesting period.";
       return;
     }
 
@@ -414,14 +595,6 @@ function attachTreasuryUI() {
       cumulative.push(cum);
     }
 
-    const result = {
-      total_kct: total,
-      years,
-      cliff_months: cliffMonths,
-      monthly_release_kct: monthlyRelease,
-      total_months: monthsTotal,
-    };
-
     summaryBox.textContent =
       `Total Treasury: ${formatNumber(total)} KCT\n` +
       `Duration: ${years} years (${monthsTotal} months)\n` +
@@ -437,24 +610,34 @@ function attachTreasuryUI() {
           {
             label: "Monthly release (KCT)",
             data: released,
+            tension: 0.25,
+            fill: false,
           },
           {
             label: "Cumulative vested (KCT)",
             data: cumulative,
+            tension: 0.25,
+            fill: false,
           },
         ],
       };
+      const options = {
+        plugins: { legend: { display: true } },
+        scales: {
+          x: { display: false },
+          y: { display: true, beginAtZero: true },
+        },
+      };
+
       if (!treasuryChartInstance) {
         treasuryChartInstance = new Chart(ctx, {
           type: "line",
           data,
-          options: {
-            plugins: { legend: { display: true } },
-            scales: { x: { display: false }, y: { display: true } },
-          },
+          options,
         });
       } else {
         treasuryChartInstance.data = data;
+        treasuryChartInstance.options = options;
         treasuryChartInstance.update();
       }
     }
@@ -471,7 +654,10 @@ function attachTreasuryUI() {
   }
 
   if (btnSim) {
-    btnSim.addEventListener("click", () => simulateTreasury());
+    btnSim.addEventListener("click", (e) => {
+      e.preventDefault();
+      simulateTreasury();
+    });
   }
 }
 
@@ -579,7 +765,8 @@ function updateNodeLeaderboard(proofs, activeNodes) {
   rows.slice(0, 10).forEach((s, idx) => {
     const tr = document.createElement("tr");
     const profile = profileMap.get(s.nodeId) || "-";
-    const workReward = `${s.workUnits.toLocaleString()} / ${s.rewards.toFixed(4)} KCT`;
+    const workReward =
+      `${s.workUnits.toLocaleString()} / ${s.rewards.toFixed(4)} KCT`;
     tr.innerHTML = `
       <td>${idx + 1}</td>
       <td>${s.nodeId}</td>
@@ -591,13 +778,40 @@ function updateNodeLeaderboard(proofs, activeNodes) {
   });
 }
 
-// ================= API Status & Refresh =================
+// ================= API / Header Badges =================
+
+function applyEmissionAndEconomics(data) {
+  emissionState = data.emission || null;
+  const econ = data.economics || null;
+  baseEconomics = econ;
+
+  const nodesCount = (data.active_nodes || []).length;
+  const proofsCount =
+    data.proofs_total_count != null
+      ? data.proofs_total_count
+      : (data.proofs_recent || []).length;
+
+  setText("stat-nodes", `Nodes: ${nodesCount}`);
+  setText("stat-proofs", `Proofs: ${proofsCount}`);
+
+  updateEmissionCardsFromState();
+  if (econ) updateEconomicsCards(econ);
+}
 
 async function refreshDashboard() {
   try {
-    setText("api-status", "Checking API…");
+    const apiEl = document.getElementById("api-status");
+    if (apiEl) {
+      apiEl.textContent = "Checking API…";
+      apiEl.classList.remove("pill-active");
+    }
+
     const data = await fetchJson("/state");
-    setText("api-status", "API online ✅");
+
+    if (apiEl) {
+      apiEl.textContent = "API online";
+      apiEl.classList.add("pill-active");
+    }
 
     applyEmissionAndEconomics(data);
     updateActiveNodesCard(data.active_nodes || []);
@@ -605,11 +819,15 @@ async function refreshDashboard() {
     updateNodeLeaderboard(data.proofs_recent || [], data.active_nodes || []);
   } catch (err) {
     console.error("Failed to refresh dashboard:", err);
-    setText("api-status", "API offline ⚠");
+    const apiEl = document.getElementById("api-status");
+    if (apiEl) {
+      apiEl.textContent = "API offline";
+      apiEl.classList.remove("pill-active");
+    }
   }
 }
 
-// ================= Init =================
+// ================= Global Listener (Sprache / Currency / Theme) =================
 
 function attachGlobalListeners() {
   const btnRefreshNodes = document.getElementById("btn-refresh-nodes");
@@ -617,15 +835,12 @@ function attachGlobalListeners() {
     btnRefreshNodes.addEventListener("click", () => refreshDashboard());
   }
 
-  // Sprache / Currency / Theme kannst du später noch verdrahten,
-  // im Moment nur visuelle Toggles
   function togglePillGroup(activeId, ids) {
     ids.forEach((id) => {
       const el = document.getElementById(id);
-      if (el) {
-        if (id === activeId) el.classList.add("pill-active");
-        else el.classList.remove("pill-active");
-      }
+      if (!el) return;
+      if (id === activeId) el.classList.add("pill-active");
+      else el.classList.remove("pill-active");
     });
   }
 
@@ -644,27 +859,54 @@ function attachGlobalListeners() {
   const btnCurEur = document.getElementById("btn-cur-eur");
   const btnCurUsd = document.getElementById("btn-cur-usd");
   if (btnCurKct && btnCurEur && btnCurUsd) {
-    btnCurKct.addEventListener("click", () =>
-      togglePillGroup("btn-cur-kct", ["btn-cur-kct", "btn-cur-eur", "btn-cur-usd"])
-    );
-    btnCurEur.addEventListener("click", () =>
-      togglePillGroup("btn-cur-eur", ["btn-cur-kct", "btn-cur-eur", "btn-cur-usd"])
-    );
-    btnCurUsd.addEventListener("click", () =>
-      togglePillGroup("btn-cur-usd", ["btn-cur-kct", "btn-cur-eur", "btn-cur-usd"])
-    );
+    btnCurKct.addEventListener("click", () => {
+      currentCurrency = "KCT";
+      togglePillGroup("btn-cur-kct", [
+        "btn-cur-kct",
+        "btn-cur-eur",
+        "btn-cur-usd",
+      ]);
+      renderEconomicsOutputs();
+    });
+    btnCurEur.addEventListener("click", () => {
+      currentCurrency = "EUR";
+      togglePillGroup("btn-cur-eur", [
+        "btn-cur-kct",
+        "btn-cur-eur",
+        "btn-cur-usd",
+      ]);
+      renderEconomicsOutputs();
+    });
+    btnCurUsd.addEventListener("click", () => {
+      currentCurrency = "USD";
+      togglePillGroup("btn-cur-usd", [
+        "btn-cur-kct",
+        "btn-cur-eur",
+        "btn-cur-usd",
+      ]);
+      renderEconomicsOutputs();
+    });
   }
 
   const themeToggle = document.getElementById("theme-toggle");
   if (themeToggle) {
     themeToggle.addEventListener("click", () => {
       const html = document.documentElement;
-      const current = html.getAttribute("data-theme") || "dark";
-      const next = current === "dark" ? "light" : "dark";
+      const cur = html.getAttribute("data-theme") || "dark";
+      const next = cur === "dark" ? "light" : "dark";
       html.setAttribute("data-theme", next);
     });
   }
+
+  const priceSlider = document.getElementById("kct-price-slider");
+  const invSlider = document.getElementById("investor-multiplier-slider");
+  const treSlider = document.getElementById("treasury-multiplier-slider");
+  if (priceSlider) priceSlider.addEventListener("input", recomputeFromSliders);
+  if (invSlider) invSlider.addEventListener("input", recomputeFromSliders);
+  if (treSlider) treSlider.addEventListener("input", recomputeFromSliders);
 }
+
+// ================= Init =================
 
 document.addEventListener("DOMContentLoaded", () => {
   attachRewardUI();
