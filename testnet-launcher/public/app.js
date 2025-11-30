@@ -15,1017 +15,405 @@ function detectApiBase() {
     return "http://127.0.0.1:8080";
   }
 
-  // 3. Standard-Fall: gleiche Origin wie das Dashboard (Render, Railway, kascompute.org/testnet, …)
-  return window.location.origin;
+  // 3. Render / Railway / Prod-Domain
+  // Falls dein Dashboard direkt vom Backend gehostet wird, reicht origin.
+  return `${window.location.origin}`;
 }
 
 const API_BASE = detectApiBase();
+console.log("KCT Dashboard API_BASE =", API_BASE);
 
-
-// Demo FX (nur Anzeige)
-const KCT_TO_USD = 0.05;
-const KCT_TO_EUR = 0.045;
-
-// LocalStorage keys
-const LANG_KEY = "kascompute_lang";
-const CURR_KEY = "kascompute_curr";
-const THEME_KEY = "kascompute_theme";
-
-// State
-let currentLang = localStorage.getItem(LANG_KEY) || "en";
-let currentCurrency = localStorage.getItem(CURR_KEY) || "KCT";
-let currentTheme = localStorage.getItem(THEME_KEY) || "dark";
-
-let lastRewardData = null;
-let lastRewardMonth = 12;
-
-let lastInvestorData = null;
-
-let investorChart = null;
-let treasuryChart = null;
-
-// zusätzliche State für Leaderboard
-let latestNodes = [];
-let latestProofs = [];
-
-// i18n
-const I18N = {
-  en: {
-    rewardMonth: "Month",
-    rewardBlockReward: "Estimated block reward",
-    rewardNote: "Note",
-    rewardNoteDemo: "KCT-emission preview for month",
-
-    invHorizon: "Horizon",
-    invGross: "Gross volume",
-    invShare: "Investor share",
-    invCash: "Cash to investor",
-    invNPV: "NPV (investor)",
-    invAPY: "Implied APY",
-
-    trTotal: "Total Treasury",
-    trVestingYears: "Vesting duration",
-    trCliff: "Cliff",
-    trLinear: "Linear vesting schedule",
-
-    axisCash: "Yearly cashflows",
-    axisCum: "Cumulative cash",
-
-    errorPrefix: "Error",
-    noData: "No data yet – please run a simulation.",
-    copyOk: "Summary copied",
-    copyFail: "Copy failed",
-  },
-  de: {
-    rewardMonth: "Monat",
-    rewardBlockReward: "Geschätzter Block-Reward",
-    rewardNote: "Hinweis",
-    rewardNoteDemo: "KCT -Emissionsvorschau für Monat",
-
-    invHorizon: "Zeithorizont",
-    invGross: "Bruttovolumen",
-    invShare: "Investor-Anteil",
-    invCash: "Cash an Investor",
-    invNPV: "Barwert (Investor)",
-    invAPY: "Implizite Rendite (APY)",
-
-    trTotal: "Treasury-Gesamt",
-    trVestingYears: "Vesting-Dauer",
-    trCliff: "Cliff",
-    trLinear: "Lineares Vesting-Schema",
-
-    axisCash: "Jährliche Cashflows",
-    axisCum: "Kumuliertes Cash",
-
-    errorPrefix: "Fehler",
-    noData: "Noch keine Daten – bitte zuerst simulieren.",
-    copyOk: "Zusammenfassung kopiert",
-    copyFail: "Kopieren fehlgeschlagen",
-  },
-};
-
-function t(key) {
-  return (I18N[currentLang] && I18N[currentLang][key]) || key;
-}
-
-// Formatting helpers
-function fmtNum(n, decimals = 2) {
-  if (!isFinite(n)) n = 0;
-  const fixed = n.toFixed(decimals);
-  const parts = fixed.split(".");
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return parts.join(",");
-}
-
-function kctToCurrency(kct, curr) {
-  if (!isFinite(kct)) kct = 0;
-  switch (curr) {
-    case "USD":
-      return kct * KCT_TO_USD;
-    case "EUR":
-      return kct * KCT_TO_EUR;
-    default:
-      return kct;
-  }
-}
-
-function fmtAmountKCT(kctVal, curr = currentCurrency) {
-  const v = kctToCurrency(kctVal, curr);
-  const txt = fmtNum(v, 2);
-  if (curr === "KCT") return `${txt} KCT`;
-  if (curr === "USD") return `$ ${txt}`;
-  if (curr === "EUR") return `€ ${txt}`;
-  return txt;
-}
-
-// Theme / Lang / Currency
-function applyTheme(theme) {
-  currentTheme = theme;
-  document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem(THEME_KEY, theme);
-}
-
-function updateLangButtons() {
-  const btnEn = document.getElementById("btn-lang-en");
-  const btnDe = document.getElementById("btn-lang-de");
-  if (!btnEn || !btnDe) return;
-  btnEn.classList.toggle("pill-active", currentLang === "en");
-  btnDe.classList.toggle("pill-active", currentLang === "de");
-}
-
-function updateCurrencyButtons() {
-  const btnKct = document.getElementById("btn-cur-kct");
-  const btnEur = document.getElementById("btn-cur-eur");
-  const btnUsd = document.getElementById("btn-cur-usd");
-  if (!btnKct || !btnEur || !btnUsd) return;
-
-  btnKct.classList.toggle("pill-active", currentCurrency === "KCT");
-  btnEur.classList.toggle("pill-active", currentCurrency === "EUR");
-  btnUsd.classList.toggle("pill-active", currentCurrency === "USD");
-
-  document.querySelectorAll("[data-unit-badge]").forEach((el) => {
-    el.textContent = currentCurrency;
-  });
-}
-
-function setLang(lang) {
-  currentLang = lang;
-  localStorage.setItem(LANG_KEY, lang);
-  updateLangButtons();
-
-  renderRewardSummary(lastRewardMonth, lastRewardData);
-  renderInvestorSummary(lastInvestorData);
-  rebuildInvestorChart(lastInvestorData);
-  renderTreasurySummary();
-  rebuildTreasuryChart();
-}
-
-function setCurrency(curr) {
-  currentCurrency = curr;
-  localStorage.setItem(CURR_KEY, curr);
-  updateCurrencyButtons();
-
-  renderRewardSummary(lastRewardMonth, lastRewardData);
-  renderInvestorSummary(lastInvestorData);
-  rebuildInvestorChart(lastInvestorData);
-  renderTreasurySummary();
-  rebuildTreasuryChart();
-}
-
-// API health
-async function checkApiHealth() {
-  const el = document.getElementById("api-status");
-  if (!el) return;
-  el.classList.remove("status-ok", "status-error");
-  el.textContent = "Checking API…";
-
-  try {
-    const res = await fetch(`${API_BASE}/health`);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const txt = (await res.text()).trim().toLowerCase();
-    if (txt.includes("ok")) {
-      el.textContent = "API online";
-      el.classList.add("status-ok");
-    } else {
-      el.textContent = "API issue";
-      el.classList.add("status-error");
-    }
-  } catch (e) {
-    el.textContent = "API offline";
-    el.classList.add("status-error");
-  }
-}
-
+// -------------------------
 // Reward Preview
-function renderRewardSummary(month, data) {
-  const box = document.getElementById("reward-summary");
-  if (!box) return;
+// -------------------------
+async function handleRewardClick(e) {
+  e.preventDefault();
 
-  if (!data || typeof data.block_reward_kct === "undefined") {
-    box.textContent = `${t("errorPrefix")}: no data`;
-    return;
-  }
+  const monthInput = document.getElementById("reward-month");
+  const resultBlock = document.getElementById("reward-result");
+  const summaryBlock = document.getElementById("reward-summary");
 
-  const rewardKct = data.block_reward_kct ?? 0;
-  const note =
-    (data.notes && String(data.notes)) ||
-    `${t("rewardNoteDemo")} ${month}`;
+  if (!monthInput || !resultBlock || !summaryBlock) return;
 
-  box.innerHTML =
-    `${t("rewardMonth")}: ${month}\n` +
-    `${t("rewardBlockReward")}: ${fmtAmountKCT(rewardKct)}\n` +
-    `${t("rewardNote")}: ${note}`;
-}
-
-async function handleRewardClick() {
-  const monthInput = document.getElementById("month");
-  const jsonBox = document.getElementById("reward-json");
-  const summaryBox = document.getElementById("reward-summary");
-  if (!monthInput || !jsonBox || !summaryBox) return;
-
-  const month = Number(monthInput.value || 1);
-  lastRewardMonth = month;
-
-  jsonBox.textContent = "Loading…";
-  summaryBox.textContent = "Loading…";
+  const month = Number(monthInput.value || "1");
 
   try {
+    resultBlock.textContent = "Loading...";
+
     const res = await fetch(`${API_BASE}/reward/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month }),
     });
-    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
     const data = await res.json();
-    lastRewardData = data;
 
-    jsonBox.textContent = JSON.stringify(data, null, 2);
-    renderRewardSummary(month, data);
-  } catch (e) {
-    const msg = `${t("errorPrefix")}: ${e.message}`;
-    jsonBox.textContent = msg;
-    summaryBox.textContent = msg;
+    const blockReward = Number(data.block_reward_kct || 0);
+    const monthlyEmission = Number(data.monthly_emission_kct || 0);
+
+    resultBlock.innerHTML = `
+      <div class="reward-result-line">
+        <span>Block reward:</span>
+        <span><strong>${blockReward.toFixed(6)} KCT</strong></span>
+      </div>
+      <div class="reward-result-line">
+        <span>Monthly emission:</span>
+        <span><strong>${monthlyEmission.toLocaleString(undefined, {
+          maximumFractionDigits: 0,
+        })} KCT</strong></span>
+      </div>
+    `;
+
+    summaryBlock.textContent = data.notes || "";
+  } catch (err) {
+    console.error("Reward preview failed", err);
+    resultBlock.textContent = "Failed to load reward preview.";
+    summaryBlock.textContent = "";
   }
 }
 
+// -------------------------
 // Investor Value Flow
-function renderInvestorSummary(data) {
-  const box = document.getElementById("investor-summary");
-  if (!box) return;
+// -------------------------
 
-  if (!data) {
-    box.textContent = t("noData");
-    return;
-  }
+const DEFAULT_INVESTOR_PARAMS = {
+  fee_annual: 200000,
+  investor_pct: 0.15,
+  years: 10,
+  growth: 0.05,
+  discount: 0.08,
+};
 
-  const years = data.years ?? data.t_years ?? 0;
-  const gross = data.gross_sum ?? 0;
-  const investor = data.investor_sum ?? 0;
-  const npv = data.npv_investor ?? 0;
-  const apy = data.apy_estimate ?? 0;
-
-  const sharePct = gross > 0 ? (investor / gross) * 100 : 0;
-
-  box.innerHTML =
-    `${t("invHorizon")}: ${fmtNum(years, 0)} years\n` +
-    `${t("invGross")}: ${fmtAmountKCT(gross)}\n` +
-    `${t("invShare")}: ${fmtNum(sharePct, 2)} %\n` +
-    `${t("invCash")}: ${fmtAmountKCT(investor)}\n` +
-    `${t("invNPV")}: ${fmtAmountKCT(npv)}\n` +
-    `${t("invAPY")}: ${fmtNum(apy * 100, 2)} %`;
-}
-
-function rebuildInvestorChart(data) {
-  const canvas = document.getElementById("investorChart");
-  if (!canvas) return;
-
-  if (!data) {
-    if (investorChart) {
-      investorChart.destroy();
-      investorChart = null;
-    }
-    return;
-  }
-
-  const years = Math.max(1, Math.round(data.years ?? data.t_years ?? 1));
-  const investorSumKct = data.investor_sum ?? 0;
-  const yearlyKct = investorSumKct / years;
-
-  const labels = [];
-  const yearly = [];
-  const cumulative = [];
-
-  let cum = 0;
-  for (let i = 1; i <= years; i++) {
-    labels.push("Y" + i);
-    cum += yearlyKct;
-    yearly.push(kctToCurrency(yearlyKct, currentCurrency));
-    cumulative.push(kctToCurrency(cum, currentCurrency));
-  }
-
-  const suffix =
-    currentCurrency === "KCT" ? "KCT" : currentCurrency === "EUR" ? "€" : "$";
-
-  if (investorChart) investorChart.destroy();
-
-  investorChart = new Chart(canvas.getContext("2d"), {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: `${t("axisCash")} (${suffix})`,
-          data: yearly,
-          borderColor: "#00e3c0",
-          backgroundColor: "rgba(0,227,192,0.15)",
-          borderWidth: 2.2,
-          tension: 0.3,
-          pointRadius: 0,
-          pointHitRadius: 8,
-        },
-        {
-          label: `${t("axisCum")} (${suffix})`,
-          data: cumulative,
-          borderColor: "#00a4ff",
-          backgroundColor: "rgba(0,164,255,0.15)",
-          borderWidth: 2.2,
-          tension: 0.3,
-          pointRadius: 0,
-          pointHitRadius: 8,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: {
-          labels: {
-            color: "#d7e4ff",
-            font: { size: 11 },
-            usePointStyle: true,
-          },
-        },
-        tooltip: {
-          backgroundColor: "rgba(5,16,35,0.96)",
-          borderColor: "#00a4ff",
-          borderWidth: 1,
-          callbacks: {
-            label: (ctx) =>
-              `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y, 2)} ${suffix}`,
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: { color: "#93a9e6", font: { size: 10 } },
-          grid: { color: "rgba(147,169,230,0.12)" },
-        },
-        y: {
-          ticks: {
-            color: "#93a9e6",
-            font: { size: 10 },
-            callback: (v) => fmtNum(v, 0),
-          },
-          grid: { color: "rgba(147,169,230,0.08)" },
-        },
-      },
-    },
-  });
-}
-
-async function handleInvestorClick() {
-  const feeEl = document.getElementById("fee");
-  const invEl = document.getElementById("investor");
-  const yearsEl = document.getElementById("years");
-  const growthEl = document.getElementById("growth");
-  const discEl = document.getElementById("discount");
-  const jsonBox = document.getElementById("investor-json");
-  const summary = document.getElementById("investor-summary");
-
-  if (!feeEl || !invEl || !yearsEl || !growthEl || !discEl || !jsonBox || !summary)
-    return;
-
-  const fee = Number(feeEl.value || 0);
-  const investor_pct = Number(invEl.value || 0);
-  const years = Number(yearsEl.value || 1);
-  const growth = Number(growthEl.value || 0);
-  const discount = Number(discEl.value || 0);
-
-  // Slider-Labels updaten
-  document.getElementById("investor-label").textContent = investor_pct.toFixed(2);
-  document.getElementById("years-label").textContent = years.toFixed(0);
-  document.getElementById("growth-label").textContent = growth.toFixed(2);
-  document.getElementById("discount-label").textContent = discount.toFixed(2);
-
-  jsonBox.textContent = "Loading…";
-  summary.textContent = "Loading…";
-
-  try {
-    const url = new URL(API_BASE + "/investor/value_flow");
-    url.searchParams.set("fee_annual", String(fee));
-    url.searchParams.set("investor_pct", String(investor_pct));
-    url.searchParams.set("years", String(years));
-    url.searchParams.set("growth", String(growth));
-    url.searchParams.set("discount", String(discount));
-
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error("HTTP " + res.status);
-
-    let data = await res.json();
-
-    // Fallback: neue Rust-API liefert nur Emissionen
-    if (
-      typeof data.years === "undefined" &&
-      typeof data.t_years === "undefined" &&
-      typeof data.gross_sum === "undefined" &&
-      typeof data.total_emission_14y_kct !== "undefined"
-    ) {
-      const gross = Number(data.total_emission_14y_kct || 0);   // nutze Emission als "Gross"
-      const invSum = gross * investor_pct;                      // Anteil an Investor
-      const npv = invSum * (1 - discount);                      // grober NPV
-      const apy = growth || 0.08;                               // grobe APY-Schätzung
-
-      data = {
-        ...data,
-        years: years,
-        gross_sum: gross,
-        investor_sum: invSum,
-        npv_investor: npv,
-        apy_estimate: apy,
-      };
-    }
-
-    lastInvestorData = data;
-
-    jsonBox.textContent = JSON.stringify(data, null, 2);
-    renderInvestorSummary(data);
-    rebuildInvestorChart(data);
-  } catch (e) {
-    const msg = `${t("errorPrefix")}: ${e.message}`;
-    jsonBox.textContent = msg;
-    summary.textContent = msg;
-    rebuildInvestorChart(null);
-  }
-}
-
-
-// Investor presets
-function applyInvestorPreset(preset) {
-  const feeEl = document.getElementById("fee");
-  const invEl = document.getElementById("investor");
-  const yearsEl = document.getElementById("years");
-  const growthEl = document.getElementById("growth");
-  const discEl = document.getElementById("discount");
-  if (!feeEl || !invEl || !yearsEl || !growthEl || !discEl) return;
-
-  if (preset === "conservative") {
-    feeEl.value = "0";
-    invEl.value = "0.10";
-    yearsEl.value = "10";
-    growthEl.value = "0.02";
-    discEl.value = "0.12";
-  } else if (preset === "balanced") {
-    feeEl.value = "0.05";
-    invEl.value = "0.20";
-    yearsEl.value = "15";
-    growthEl.value = "0.05";
-    discEl.value = "0.08";
-  } else if (preset === "aggressive") {
-    feeEl.value = "0.10";
-    invEl.value = "0.30";
-    yearsEl.value = "20";
-    growthEl.value = "0.10";
-    discEl.value = "0.05";
-  }
-
-  // Labels updaten & direkt simulieren
-  document.getElementById("investor-label").textContent =
-    Number(invEl.value || 0).toFixed(2);
-  document.getElementById("years-label").textContent =
-    Number(yearsEl.value || 0).toFixed(0);
-  document.getElementById("growth-label").textContent =
-    Number(growthEl.value || 0).toFixed(2);
-  document.getElementById("discount-label").textContent =
-    Number(discEl.value || 0).toFixed(2);
-
-  handleInvestorClick();
-}
-
-// Treasury Vesting (clientseitig)
-function computeTreasurySchedule() {
-  const totalInput = document.getElementById("treasury-total");
-  const yearsInput = document.getElementById("treasury-years");
-  const cliffInput = document.getElementById("treasury-cliff");
-  if (!totalInput || !yearsInput || !cliffInput) return null;
-
-  const total = Number(totalInput.value || 0);
-  const years = Number(yearsInput.value || 1);
-  const cliffMonths = Number(cliffInput.value || 0);
-
-  const monthsTotal = years * 12;
-  const monthsLinear = Math.max(1, monthsTotal - cliffMonths);
-  const perMonth = total / monthsLinear;
-
-  const perYear = [];
-  const cumulative = [];
-
-  let vestedCum = 0;
-  for (let y = 1; y <= years; y++) {
-    const mStart = (y - 1) * 12;
-    const mEnd = y * 12;
-
-    let vestedInYear = 0;
-    for (let m = mStart; m < mEnd; m++) {
-      if (m < cliffMonths) continue;
-      if (m >= cliffMonths + monthsLinear) continue;
-      vestedInYear += perMonth;
-    }
-
-    vestedCum += vestedInYear;
-    perYear.push(vestedInYear);
-    cumulative.push(vestedCum);
-  }
+function getInvestorParamsFromUI() {
+  const feeInput = document.getElementById("inv-fee");
+  const investorInput = document.getElementById("inv-investor");
+  const yearsInput = document.getElementById("inv-years");
+  const growthInput = document.getElementById("inv-growth");
+  const discountInput = document.getElementById("inv-discount");
 
   return {
-    totalKct: total,
-    years,
-    cliffMonths,
-    perYearKct: perYear,
-    cumulativeKct: cumulative,
+    fee_annual: Number(feeInput?.value || DEFAULT_INVESTOR_PARAMS.fee_annual),
+    investor_pct:
+      Number(investorInput?.value || DEFAULT_INVESTOR_PARAMS.investor_pct) /
+      100.0,
+    years: Number(yearsInput?.value || DEFAULT_INVESTOR_PARAMS.years),
+    growth:
+      Number(growthInput?.value || DEFAULT_INVESTOR_PARAMS.growth * 100) /
+      100.0,
+    discount:
+      Number(discountInput?.value || DEFAULT_INVESTOR_PARAMS.discount * 100) /
+      100.0,
   };
 }
 
-function renderTreasurySummary() {
-  const box = document.getElementById("treasury-summary");
-  if (!box) return;
+function updateInvestorSlidersLabels() {
+  const investorInput = document.getElementById("inv-investor");
+  const investorLabel = document.getElementById("inv-investor-label");
+  const yearsInput = document.getElementById("inv-years");
+  const yearsLabel = document.getElementById("inv-years-label");
+  const growthInput = document.getElementById("inv-growth");
+  const growthLabel = document.getElementById("inv-growth-label");
+  const discountInput = document.getElementById("inv-discount");
+  const discountLabel = document.getElementById("inv-discount-label");
 
-  const totalInput = document.getElementById("treasury-total");
-  const yearsInput = document.getElementById("treasury-years");
-  const cliffInput = document.getElementById("treasury-cliff");
-
-  const total = Number(totalInput.value || 0);
-  const years = Number(yearsInput.value || 1);
-  const cliffMonths = Number(cliffInput.value || 0);
-
-  const sched = computeTreasurySchedule();
-  if (!sched) {
-    box.textContent = t("noData");
-    return;
-  }
-
-  const vestedEnd = sched.cumulativeKct[sched.cumulativeKct.length - 1] || 0;
-  const remaining = total - vestedEnd;
-
-  box.innerHTML =
-    `${t("trTotal")}: ${fmtAmountKCT(total, "KCT")}\n` +
-    `${t("trVestingYears")}: ${years} years\n` +
-    `${t("trCliff")}: ${cliffMonths} months\n` +
-    `${t("trLinear")}: ${fmtAmountKCT(vestedEnd, "KCT")} vested over period\n` +
-    `Remaining: ${fmtAmountKCT(remaining, "KCT")}`;
-}
-
-function rebuildTreasuryChart() {
-  const canvas = document.getElementById("treasuryChart");
-  if (!canvas) return;
-
-  const sched = computeTreasurySchedule();
-  if (!sched) {
-    if (treasuryChart) {
-      treasuryChart.destroy();
-      treasuryChart = null;
-    }
-    return;
-  }
-
-  const labels = [];
-  for (let i = 1; i <= sched.years; i++) labels.push("Y" + i);
-
-  const perYearCurr = sched.perYearKct.map((v) =>
-    kctToCurrency(v, currentCurrency)
-  );
-  const cumulativeCurr = sched.cumulativeKct.map((v) =>
-    kctToCurrency(v, currentCurrency)
-  );
-
-  const suffix =
-    currentCurrency === "KCT" ? "KCT" : currentCurrency === "EUR" ? "€" : "$";
-
-  if (treasuryChart) treasuryChart.destroy();
-
-  treasuryChart = new Chart(canvas.getContext("2d"), {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        {
-          type: "bar",
-          label: `Yearly vested (${suffix})`,
-          data: perYearCurr,
-          backgroundColor: "rgba(0,227,192,0.35)",
-          borderColor: "#00e3c0",
-          borderWidth: 1.3,
-          borderRadius: 5,
-        },
-        {
-          type: "line",
-          label: `Cumulative vested (${suffix})`,
-          data: cumulativeCurr,
-          borderColor: "#00a4ff",
-          backgroundColor: "rgba(0,164,255,0.18)",
-          borderWidth: 2.2,
-          tension: 0.3,
-          pointRadius: 0,
-          yAxisID: "y1",
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      scales: {
-        x: {
-          ticks: { color: "#93a9e6", font: { size: 10 } },
-          grid: { color: "rgba(147,169,230,0.12)" },
-        },
-        y: {
-          position: "left",
-          ticks: {
-            color: "#93a9e6",
-            font: { size: 10 },
-            callback: (v) => fmtNum(v, 0),
-          },
-          grid: { color: "rgba(147,169,230,0.08)" },
-        },
-        y1: {
-          position: "right",
-          ticks: {
-            color: "#93a9e6",
-            font: { size: 10 },
-            callback: (v) => fmtNum(v, 0),
-          },
-          grid: { drawOnChartArea: false },
-        },
-      },
-      plugins: {
-        legend: {
-          labels: {
-            color: "#d7e4ff",
-            font: { size: 11 },
-            usePointStyle: true,
-          },
-        },
-        tooltip: {
-          backgroundColor: "rgba(5,16,35,0.96)",
-          borderColor: "#00e3c0",
-          borderWidth: 1,
-          callbacks: {
-            label: (ctx) =>
-              `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y, 0)} ${suffix}`,
-          },
-        },
-      },
-    },
-  });
-}
-
-function handleTreasurySimulate() {
-  const yearsEl = document.getElementById("treasury-years");
-  const cliffEl = document.getElementById("treasury-cliff");
-  if (yearsEl) {
-    document.getElementById("treasury-years-label").textContent =
-      yearsEl.value;
-  }
-  if (cliffEl) {
-    document.getElementById("treasury-cliff-label").textContent =
-      cliffEl.value;
-  }
-  renderTreasurySummary();
-  rebuildTreasuryChart();
-}
-
-// Treasury preset
-function applyTreasuryPreset() {
-  const totalInput = document.getElementById("treasury-total");
-  const yearsInput = document.getElementById("treasury-years");
-  const cliffInput = document.getElementById("treasury-cliff");
-  if (!totalInput || !yearsInput || !cliffInput) return;
-
-  // Beispiel: 10% von 10B = 1B, 14 Jahre, 12 Monate Cliff
-  totalInput.value = "1000000000";
-  yearsInput.value = "14";
-  cliffInput.value = "12";
-
-  document.getElementById("treasury-years-label").textContent = "14";
-  document.getElementById("treasury-cliff-label").textContent = "12";
-
-  renderTreasurySummary();
-  rebuildTreasuryChart();
-}
-
-// JSON toggle
-function setupJsonToggle(btnId, preId) {
-  const btn = document.getElementById(btnId);
-  const pre = document.getElementById(preId);
-  if (!btn || !pre) return;
-  btn.addEventListener("click", () => {
-    const visible = pre.style.display !== "none";
-    pre.style.display = visible ? "none" : "block";
-    btn.textContent = visible ? "Show raw JSON" : "Hide raw JSON";
-  });
-}
-
-// Copy helper
-function setupCopyButton(btnId, sourceId) {
-  const btn = document.getElementById(btnId);
-  const src = document.getElementById(sourceId);
-  if (!btn || !src) return;
-
-  btn.addEventListener("click", async () => {
-    const text = src.textContent || "";
-    if (!text.trim()) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      btn.textContent = t("copyOk");
-      setTimeout(() => {
-        if (btnId === "btn-reward-copy") btn.textContent = "Copy summary";
-        if (btnId === "btn-investor-copy") btn.textContent = "Copy summary";
-        if (btnId === "btn-treasury-copy") btn.textContent = "Copy summary";
-      }, 1500);
-    } catch (e) {
-      btn.textContent = t("copyFail");
-      setTimeout(() => {
-        if (btnId === "btn-reward-copy") btn.textContent = "Copy summary";
-        if (btnId === "btn-investor-copy") btn.textContent = "Copy summary";
-        if (btnId === "btn-treasury-copy") btn.textContent = "Copy summary";
-      }, 1500);
-    }
-  });
-}
-
-// ---------- Leaderboard / GPU helpers (global) ----------
-
-function detectGpu(profile) {
-  if (!profile) return false;
-  const h = profile.toLowerCase();
-  const gpuKeywords = [
-    "rtx",
-    "gtx",
-    "radeon",
-    "rx ",
-    "quadro",
-    "a40",
-    "a100",
-    "h100",
-    "3060",
-    "3070",
-    "3080",
-    "3090",
-    "4060",
-    "4070",
-    "4080",
-    "4090",
-  ];
-  return gpuKeywords.some((kw) => h.includes(kw));
-}
-
-function buildLeaderboard(nodes, proofs) {
-  const stats = new Map();
-
-  // Basis aus Nodes
-  (nodes || []).forEach((n) => {
-    stats.set(n.node_id, {
-      node_id: n.node_id,
-      compute_profile: n.compute_profile || "unknown",
-      compute_score: n.compute_score ?? 0,
-      last_seen_unix: n.last_seen_unix || 0,
-      totalProofs: 0,
-      totalWorkUnits: 0,
-      totalRewardKct: 0,
-      hasGpu: detectGpu(n.compute_profile || ""),
+  if (investorInput && investorLabel) {
+    investorLabel.textContent = `${investorInput.value}%`;
+    investorInput.addEventListener("input", () => {
+      investorLabel.textContent = `${investorInput.value}%`;
     });
-  });
+  }
 
-  // Proofs aggregieren
-  (proofs || []).forEach((p) => {
-    const id = p.node_id;
-    if (!id) return;
+  if (yearsInput && yearsLabel) {
+    yearsLabel.textContent = `${yearsInput.value} years`;
+    yearsInput.addEventListener("input", () => {
+      yearsLabel.textContent = `${yearsInput.value} years`;
+    });
+  }
 
-    if (!stats.has(id)) {
-      stats.set(id, {
-        node_id: id,
-        compute_profile: "unknown",
-        compute_score: 0,
-        last_seen_unix: p.timestamp || 0,
-        totalProofs: 0,
-        totalWorkUnits: 0,
-        totalRewardKct: 0,
-        hasGpu: false,
-      });
-    }
+  if (growthInput && growthLabel) {
+    growthLabel.textContent = `${growthInput.value}%`;
+    growthInput.addEventListener("input", () => {
+      growthLabel.textContent = `${growthInput.value}%`;
+    });
+  }
 
-    const s = stats.get(id);
-    s.totalProofs += 1;
-    s.totalWorkUnits += p.work_units ?? 0;
-    s.totalRewardKct += p.estimated_reward_kct ?? 0;
-    if (p.timestamp && p.timestamp > (s.last_seen_unix || 0)) {
-      s.last_seen_unix = p.timestamp;
-    }
-  });
-
-  const list = Array.from(stats.values());
-  list.sort((a, b) => {
-    if (b.totalProofs !== a.totalProofs) return b.totalProofs - a.totalProofs;
-    if (b.totalWorkUnits !== a.totalWorkUnits)
-      return b.totalWorkUnits - a.totalWorkUnits;
-    return (b.compute_score || 0) - (a.compute_score || 0);
-  });
-
-  return list;
+  if (discountInput && discountLabel) {
+    discountLabel.textContent = `${discountInput.value}%`;
+    discountInput.addEventListener("input", () => {
+      discountLabel.textContent = `${discountInput.value}%`;
+    });
+  }
 }
 
-function renderLeaderboardTable(leaderboard) {
+async function handleInvestorClick(e) {
+  e.preventDefault();
+
+  const resultBlock = document.getElementById("investor-result");
+  if (!resultBlock) return;
+
+  const q = getInvestorParamsFromUI();
+
+  const url = new URL(`${API_BASE}/investor/value_flow`);
+  url.searchParams.set("fee_annual", String(q.fee_annual));
+  url.searchParams.set("investor_pct", String(q.investor_pct));
+  url.searchParams.set("years", String(q.years));
+  url.searchParams.set("growth", String(q.growth));
+  url.searchParams.set("discount", String(q.discount));
+
+  try {
+    resultBlock.textContent = "Loading...";
+
+    const res = await fetch(url.toString(), { method: "GET" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+
+    const gross = Number(data.gross_sum || 0);
+    const investorSum = Number(data.investor_sum || 0);
+    const npv = Number(data.npv_investor || 0);
+    const apy = Number(data.apy_estimate || 0);
+
+    resultBlock.innerHTML = `
+      <div class="inv-line">
+        <span>Total gross fees:</span>
+        <span><strong>${gross.toLocaleString(undefined, {
+          maximumFractionDigits: 0,
+        })} USD</strong></span>
+      </div>
+      <div class="inv-line">
+        <span>Investor share (undiscounted):</span>
+        <span><strong>${investorSum.toLocaleString(undefined, {
+          maximumFractionDigits: 0,
+        })} USD</strong></span>
+      </div>
+      <div class="inv-line">
+        <span>NPV (discounted):</span>
+        <span><strong>${npv.toLocaleString(undefined, {
+          maximumFractionDigits: 0,
+        })} USD</strong></span>
+      </div>
+      <div class="inv-line">
+        <span>Implied APY (on notional fee):</span>
+        <span><strong>${(apy * 100).toFixed(2)}%</strong></span>
+      </div>
+    `;
+  } catch (err) {
+    console.error("Investor flow failed", err);
+    resultBlock.textContent = "Failed to load investor simulation.";
+  }
+}
+
+// -------------------------
+// Treasury Vesting (Dummy UI-Only)
+// -------------------------
+
+function handleTreasurySimulate(e) {
+  e.preventDefault();
+
+  const totalInput = document.getElementById("treasury-total");
+  const monthsInput = document.getElementById("treasury-months");
+  const discountInput = document.getElementById("treasury-discount");
+  const resultBlock = document.getElementById("treasury-result");
+
+  if (!totalInput || !monthsInput || !discountInput || !resultBlock) return;
+
+  const total = Number(totalInput.value || "900000000");
+  const months = Number(monthsInput.value || "168");
+  const discount = Number(discountInput.value || "8") / 100;
+
+  const monthly = total / months;
+  let sum = 0;
+  let npv = 0;
+
+  for (let t = 1; t <= months; t++) {
+    sum += monthly;
+    const discFactor = Math.pow(1 + discount / 12, t);
+    npv += monthly / discFactor;
+  }
+
+  resultBlock.innerHTML = `
+    <div class="treasury-line">
+      <span>Monthly vesting:</span>
+      <span><strong>${monthly.toLocaleString(undefined, {
+        maximumFractionDigits: 0,
+      })} KCT</strong></span>
+    </div>
+    <div class="treasury-line">
+      <span>Total vested:</span>
+      <span><strong>${sum.toLocaleString(undefined, {
+        maximumFractionDigits: 0,
+      })} KCT</strong></span>
+    </div>
+    <div class="treasury-line">
+      <span>Discounted NPV:</span>
+      <span><strong>${npv.toLocaleString(undefined, {
+        maximumFractionDigits: 0,
+      })} KCT</strong></span>
+    </div>
+  `;
+}
+
+// -------------------------
+// Active Nodes + Leaderboard
+// -------------------------
+
+let latestNodes = [];
+let latestProofs = [];
+let cachedLang = "en";
+let currentTheme = "dark";
+let currentCurrency = "usd";
+
+const THEME_KEY = "kct_theme";
+const LANG_KEY = "kct_lang";
+const CURR_KEY = "kct_currency";
+
+// Liefert Node-Typen "CPU" / "GPU" anhand des compute_profile strings
+function detectNodeType(computeProfile) {
+  const v = String(computeProfile || "").toLowerCase();
+  if (v.includes("gpu")) return "GPU";
+  if (v.includes("rtx") || v.includes("rx") || v.includes("gddr")) return "GPU";
+  return "CPU";
+}
+
+// Kleines Badge für GPU-Nodes
+function renderProfileWithBadge(computeProfile) {
+  const nodeType = detectNodeType(computeProfile);
+  const label = computeProfile || "unknown";
+  if (nodeType === "GPU") {
+    return `<span class="badge-gpu">${label}</span>`;
+  }
+  return `<span class="badge-cpu">${label}</span>`;
+}
+
+// Fetch Active Nodes
+async function fetchNodes() {
+  const tbody = document.getElementById("nodes-body");
+  const summary = document.getElementById("nodes-summary");
+  if (!tbody) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/nodes`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    latestNodes = data;
+
+    tbody.innerHTML = "";
+
+    if (!data || data.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4">No nodes online yet.</td>
+        </tr>
+      `;
+      if (summary) {
+        summary.textContent = "No active nodes.";
+      }
+      return;
+    }
+
+    data.forEach((n) => {
+      const tr = document.createElement("tr");
+
+      const nodeType = detectNodeType(n.compute_profile);
+      const profileHtml = renderProfileWithBadge(n.compute_profile);
+
+      const lastSeenSec = Number(n.last_seen_unix || 0);
+      const lastSeenDate = new Date(lastSeenSec * 1000);
+      const lastSeenStr = lastSeenDate.toLocaleString();
+
+      tr.innerHTML = `
+        <td>${n.node_id}</td>
+        <td>${profileHtml}</td>
+        <td>${n.compute_score ?? 0}</td>
+        <td>${lastSeenStr}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    if (summary) {
+      summary.textContent = `${data.length} node(s) connected.`;
+    }
+  } catch (err) {
+    console.error("Failed to fetch nodes", err);
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4">Failed to load nodes.</td>
+        </tr>
+      `;
+    }
+    if (summary) {
+      summary.textContent = "Error loading nodes.";
+    }
+  }
+}
+
+// -------------------------
+// Proof-of-Compute Feed & Leaderboard
+// -------------------------
+
+function updateHeaderProofs(proofs) {
+  const headerSpan = document.getElementById("poc-header-count");
+  if (!headerSpan) return;
+  headerSpan.textContent = proofs && proofs.length ? `${proofs.length}` : "0";
+}
+
+function updateLeaderboard() {
   const tbody = document.getElementById("leaderboard-body");
   if (!tbody) return;
 
-  if (!leaderboard || leaderboard.length === 0) {
+  if (!latestProofs || latestProofs.length === 0) {
     tbody.innerHTML = `
-      <tr class="lb-empty-row">
-        <td colspan="5">No node activity yet.</td>
+      <tr>
+        <td colspan="4">No node activity yet.</td>
       </tr>
     `;
     return;
   }
 
+  // Aggregiere Work + Reward pro Node
+  const agg = {};
+  latestProofs.forEach((p) => {
+    const nodeId = p.node_id || "unknown";
+    if (!agg[nodeId]) {
+      agg[nodeId] = {
+        node_id: nodeId,
+        proofs: 0,
+        work_units: 0,
+        reward_kct: 0,
+      };
+    }
+    agg[nodeId].proofs += 1;
+    agg[nodeId].work_units += Number(p.work_units || 0);
+    agg[nodeId].reward_kct += Number(p.estimated_reward_kct || 0);
+  });
+
+  const rows = Object.values(agg);
+
+  rows.sort((a, b) => b.reward_kct - a.reward_kct);
+
   tbody.innerHTML = "";
 
-  leaderboard.forEach((entry, index) => {
+  rows.forEach((r) => {
     const tr = document.createElement("tr");
-    tr.className = "leaderboard-row";
-
-    const gpuPill = entry.hasGpu
-      ? '<span class="lb-gpu-pill">GPU</span>'
-      : '<span class="lb-cpu-pill">CPU</span>';
-
-    const lastSeen =
-      entry.last_seen_unix && entry.last_seen_unix > 0
-        ? new Date(entry.last_seen_unix * 1000).toLocaleString()
-        : "-";
-
-    const work = (entry.totalWorkUnits || 0).toLocaleString();
-    const reward = (entry.totalRewardKct || 0).toFixed(6);
-
     tr.innerHTML = `
-      <td class="lb-rank">#${index + 1}</td>
-      <td>
-        <div class="lb-node-id">${entry.node_id}</div>
-      </td>
-      <td>
-        <div class="lb-profile">
-          <span>${entry.compute_profile}</span>
-          ${gpuPill}
-        </div>
-      </td>
-      <td class="lb-proofs">${entry.totalProofs}</td>
-      <td class="lb-meta">
-        <div>${work} wu / ${reward} KCT</div>
-        <div class="lb-last-seen">${lastSeen}</div>
-      </td>
+      <td>${r.node_id}</td>
+      <td>${r.proofs}</td>
+      <td>${r.work_units.toLocaleString()}</td>
+      <td>${r.reward_kct.toFixed(6)}</td>
     `;
-
     tbody.appendChild(tr);
   });
 }
 
-function updateLeaderboard() {
-  const tbody = document.getElementById("leaderboard-body");
-  if (!tbody) return; // wenn kein Leaderboard-Panel existiert, einfach nichts tun
-  const lb = buildLeaderboard(latestNodes || [], latestProofs || []);
-  renderLeaderboardTable(lb);
-}
-
-// Init
-document.addEventListener("DOMContentLoaded", () => {
-  // Theme
-  applyTheme(currentTheme || "dark");
-  const themeToggle = document.getElementById("theme-toggle");
-  if (themeToggle) {
-    themeToggle.addEventListener("click", () => {
-      currentTheme = currentTheme === "dark" ? "light" : "dark";
-      applyTheme(currentTheme);
-      rebuildInvestorChart(lastInvestorData);
-      rebuildTreasuryChart();
-    });
-  }
-
-  // ---------- ACTIVE NODES ----------
-  function shortPk(pk) {
-    if (!pk) return "";
-    if (pk.length <= 14) return pk;
-    return pk.slice(0, 8) + "…" + pk.slice(-6);
-  }
-
-  function timeAgoFromUnix(unixSeconds) {
-    if (!unixSeconds) return "unknown";
-    const now = Date.now() / 1000;
-    let diff = Math.max(0, Math.round(now - unixSeconds));
-
-    if (diff < 10) return "just now";
-    if (diff < 60) return diff + "s ago";
-    const mins = Math.round(diff / 60);
-    if (mins < 60) return mins + " min ago";
-    const hours = Math.round(mins / 60);
-    return hours + " h ago";
-  }
-
-  // Header-Update für Nodes
-  function updateHeaderNodes(nodes) {
-    const el = document.getElementById("stat-nodes");
-    if (!el) return;
-    const count = Array.isArray(nodes) ? nodes.length : 0;
-    el.textContent = `Nodes: ${count}`;
-  }
-
-  function renderNodes(nodes) {
-    const countEl = document.getElementById("node-count");
-    const listEl = document.getElementById("node-list");
-    if (!countEl || !listEl) return;
-
-    if (!nodes || nodes.length === 0) {
-      countEl.textContent = "0";
-      listEl.innerHTML = `<li class="node-empty">No nodes online yet.</li>`;
-      updateHeaderNodes([]);
-      latestNodes = [];
-      updateLeaderboard();
-      return;
-    }
-
-    countEl.textContent = String(nodes.length);
-
-    listEl.innerHTML = nodes
-      .map((n) => {
-        const lastSeen = timeAgoFromUnix(n.last_seen_unix);
-        const pkShort = shortPk(n.public_key_hex);
-        const profile = n.compute_profile || "unknown";
-        const score = n.compute_score ?? 0;
-
-        return `
-        <li class="node-item">
-          <div class="node-id">${n.node_id}</div>
-          <div class="node-meta">
-            <span>${profile}</span>
-            <span>${pkShort}</span>
-            <span>score: ${score}</span>
-            <span>last seen: ${lastSeen}</span>
-          </div>
-        </li>
-      `;
-      })
-      .join("");
-
-    updateHeaderNodes(nodes);
-    latestNodes = nodes;
-    updateLeaderboard();
-  }
-
-  async function fetchNodes() {
-    const listEl = document.getElementById("node-list");
-    if (listEl) {
-      listEl.classList.add("loading");
-    }
-
-    try {
-      const res = await fetch(`${API_BASE}/nodes`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      renderNodes(data);
-    } catch (err) {
-      console.error("Failed to fetch nodes", err);
-      if (listEl) {
-        listEl.innerHTML = `<li class="node-empty">Could not load nodes.</li>`;
-      }
-      updateHeaderNodes([]);
-      latestNodes = [];
-      updateLeaderboard();
-    } finally {
-      if (listEl) {
-        listEl.classList.remove("loading");
-      }
-    }
-  }
-
-  // ---------- PROOF-OF-COMPUTE FEED ----------
-  // Header-Update für Proofs
-  function updateHeaderProofs(proofs) {
-    const el = document.getElementById("stat-proofs");
-    if (!el) return;
-    const count = Array.isArray(proofs) ? proofs.length : 0;
-    el.textContent = `Proofs: ${count}`;
-  }
-
-  function renderProofs(proofs) {
+function renderProofs(proofs) {
   const tbody = document.getElementById("proofs-body");
   if (!tbody) return;
 
@@ -1042,14 +430,16 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  // Header-Zähler & Leaderboard sollen ALLE Proofs kennen
+  // Header + Leaderboard updaten
   updateHeaderProofs(proofs);
   latestProofs = proofs;
   updateLeaderboard();
 
-  // 🔥 Nur die letzten 10 Proofs im Table anzeigen (neueste oben)
+  // Nur die neuesten 10 Proofs anzeigen (nach Zeit sortiert)
   const sorted = [...proofs].sort(
-    (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+    (a, b) =>
+      (b.timestamp_unix ?? b.timestamp ?? 0) -
+      (a.timestamp_unix ?? a.timestamp ?? 0)
   );
   const visible = sorted.slice(0, 10);
 
@@ -1057,7 +447,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   visible.forEach((p) => {
     const tr = document.createElement("tr");
-    const date = new Date(p.timestamp * 1000);
+
+    const unix = p.timestamp_unix ?? p.timestamp ?? 0;
+    const date = new Date(unix * 1000);
     const ts = date.toLocaleString();
 
     tr.innerHTML = `
@@ -1072,32 +464,125 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 }
 
-
-  async function fetchProofs() {
-    const tbody = document.getElementById("proofs-body");
-    try {
-      const res = await fetch(`${API_BASE}/api/stats/proofs`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      renderProofs(data);
-    } catch (err) {
-      console.error("Failed to fetch proofs", err);
-      if (tbody) {
-        tbody.innerHTML = `
+async function fetchProofs() {
+  const tbody = document.getElementById("proofs-body");
+  try {
+    // Backend-Route: GET /proofs
+    const res = await fetch(`${API_BASE}/proofs`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderProofs(data);
+  } catch (err) {
+    console.error("Failed to fetch proofs", err);
+    if (tbody) {
+      tbody.innerHTML = `
           <tr class="poc-empty-row">
             <td colspan="5">Could not load proofs.</td>
           </tr>
         `;
-      }
-      updateHeaderProofs([]);
-      latestProofs = [];
-      updateLeaderboard();
     }
+    updateHeaderProofs([]);
+    latestProofs = [];
+    updateLeaderboard();
   }
+}
 
-  // Lang & Currency
+// -------------------------
+// Language, Theme, Currency
+// -------------------------
+
+function detectInitialLang() {
+  const stored = localStorage.getItem(LANG_KEY);
+  if (stored === "en" || stored === "de") return stored;
+
+  const lang = navigator.language || "en";
+  if (lang.toLowerCase().startsWith("de")) return "de";
+  return "en";
+}
+
+function setLang(lang) {
+  cachedLang = lang;
+  localStorage.setItem(LANG_KEY, lang);
+  document.documentElement.setAttribute("data-lang", lang);
+
+  const enOnly = document.querySelectorAll("[data-lang='en']");
+  const deOnly = document.querySelectorAll("[data-lang='de']");
+
+  enOnly.forEach((el) => {
+    el.style.display = lang === "en" ? "" : "none";
+  });
+  deOnly.forEach((el) => {
+    el.style.display = lang === "de" ? "" : "none";
+  });
+
   updateLangButtons();
+}
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+function updateLangButtons() {
+  const btnEn = document.getElementById("btn-lang-en");
+  const btnDe = document.getElementById("btn-lang-de");
+  if (!btnEn || !btnDe) return;
+  btnEn.classList.toggle("pill-active", cachedLang === "en");
+  btnDe.classList.toggle("pill-active", cachedLang === "de");
+}
+
+function detectInitialTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === "dark" || stored === "light") return stored;
+
+  if (
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+  ) {
+    return "dark";
+  }
+  return "light";
+}
+
+function setCurrency(curr) {
+  currentCurrency = curr;
+  localStorage.setItem(CURR_KEY, curr);
+  document.documentElement.setAttribute("data-currency", curr);
   updateCurrencyButtons();
+}
+
+function detectInitialCurrency() {
+  const stored = localStorage.getItem(CURR_KEY);
+  if (stored) return stored;
+  return "usd";
+}
+
+function updateCurrencyButtons() {
+  const buttons = document.querySelectorAll("[data-currency-button]");
+  buttons.forEach((btn) => {
+    const c = btn.getAttribute("data-currency-button");
+    btn.classList.toggle("pill-active", c === currentCurrency);
+  });
+}
+
+// -------------------------
+// INIT
+// -------------------------
+
+document.addEventListener("DOMContentLoaded", () => {
+  // Theme
+  const initialTheme = detectInitialTheme();
+  applyTheme(initialTheme);
+
+  const btnThemeLight = document.getElementById("btn-theme-light");
+  const btnThemeDark = document.getElementById("btn-theme-dark");
+  btnThemeLight?.addEventListener("click", () => applyTheme("light"));
+  btnThemeDark?.addEventListener("click", () => applyTheme("dark"));
+
+  // Language
+  const initialLang = detectInitialLang();
+  setLang(initialLang);
 
   document.getElementById("btn-lang-en")?.addEventListener("click", () =>
     setLang("en")
@@ -1106,126 +591,38 @@ document.addEventListener("DOMContentLoaded", () => {
     setLang("de")
   );
 
-  document.getElementById("btn-cur-kct")?.addEventListener("click", () =>
-    setCurrency("KCT")
-  );
-  document.getElementById("btn-cur-eur")?.addEventListener("click", () =>
-    setCurrency("EUR")
-  );
-  document.getElementById("btn-cur-usd")?.addEventListener("click", () =>
-    setCurrency("USD")
-  );
+  // Currency
+  const initialCurr = detectInitialCurrency();
+  setCurrency(initialCurr);
 
-  // Reward controls
-  const monthInput = document.getElementById("month");
-  if (monthInput) {
-    document.getElementById("month-label").textContent = monthInput.value;
-    monthInput.addEventListener("input", () => {
-      document.getElementById("month-label").textContent = monthInput.value;
-    });
-  }
+  document
+    .querySelectorAll("[data-currency-button]")
+    .forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const c = btn.getAttribute("data-currency-button");
+        if (c) setCurrency(c);
+      })
+    );
+
+  // Reward Preview Button
   document
     .getElementById("btn-reward")
     ?.addEventListener("click", handleRewardClick);
 
-  // Investor sliders live labels
-  const invSlider = document.getElementById("investor");
-  if (invSlider) {
-    document.getElementById("investor-label").textContent =
-      Number(invSlider.value || 0).toFixed(2);
-    invSlider.addEventListener("input", () => {
-      document.getElementById("investor-label").textContent =
-        Number(invSlider.value || 0).toFixed(2);
-    });
-  }
-  const yearsSlider = document.getElementById("years");
-  if (yearsSlider) {
-    document.getElementById("years-label").textContent =
-      Number(yearsSlider.value || 0).toFixed(0);
-    yearsSlider.addEventListener("input", () => {
-      document.getElementById("years-label").textContent =
-        Number(yearsSlider.value || 0).toFixed(0);
-    });
-  }
-  const growthSlider = document.getElementById("growth");
-  if (growthSlider) {
-    document.getElementById("growth-label").textContent =
-      Number(growthSlider.value || 0).toFixed(2);
-    growthSlider.addEventListener("input", () => {
-      document.getElementById("growth-label").textContent =
-        Number(growthSlider.value || 0).toFixed(2);
-    });
-  }
-  const discSlider = document.getElementById("discount");
-  if (discSlider) {
-    document.getElementById("discount-label").textContent =
-      Number(discSlider.value || 0).toFixed(2);
-    discSlider.addEventListener("input", () => {
-      document.getElementById("discount-label").textContent =
-        Number(discSlider.value || 0).toFixed(2);
-    });
-  }
-
+  // Investor Button
   document
     .getElementById("btn-investor")
     ?.addEventListener("click", handleInvestorClick);
 
-  // Investor presets
-  document
-    .getElementById("inv-preset-conservative")
-    ?.addEventListener("click", () => applyInvestorPreset("conservative"));
-  document
-    .getElementById("inv-preset-balanced")
-    ?.addEventListener("click", () => applyInvestorPreset("balanced"));
-  document
-    .getElementById("inv-preset-aggressive")
-    ?.addEventListener("click", () => applyInvestorPreset("aggressive"));
-
-  // Treasury sliders + buttons
-  const trYears = document.getElementById("treasury-years");
-  const trCliff = document.getElementById("treasury-cliff");
-  if (trYears) {
-    document.getElementById("treasury-years-label").textContent =
-      trYears.value;
-    trYears.addEventListener("input", () => {
-      document.getElementById("treasury-years-label").textContent =
-        trYears.value;
-    });
-  }
-  if (trCliff) {
-    document.getElementById("treasury-cliff-label").textContent =
-      trCliff.value;
-    trCliff.addEventListener("input", () => {
-      document.getElementById("treasury-cliff-label").textContent =
-        trCliff.value;
-    });
-  }
-
+  // Treasury Button
   document
     .getElementById("btn-treasury")
     ?.addEventListener("click", handleTreasurySimulate);
-  document
-    .getElementById("btn-treasury-preset")
-    ?.addEventListener("click", applyTreasuryPreset);
 
-  // JSON toggles
-  setupJsonToggle("btn-reward-json", "reward-json");
-  setupJsonToggle("btn-investor-json", "investor-json");
+  // Investor sliders live labels
+  updateInvestorSlidersLabels();
 
-  // Copy buttons
-  setupCopyButton("btn-reward-copy", "reward-summary");
-  setupCopyButton("btn-investor-copy", "investor-summary");
-  setupCopyButton("btn-treasury-copy", "treasury-summary");
-
-  // Initial treasury summary & chart
-  renderTreasurySummary();
-  rebuildTreasuryChart();
-
-  // API health
-  checkApiHealth();
-  setInterval(checkApiHealth, 30000);
-
-  // Active nodes panel
+  // Nodes
   fetchNodes();
   setInterval(fetchNodes, 10000);
 
