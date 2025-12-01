@@ -390,103 +390,88 @@ function attachInvestorUI() {
   }
 
   function simulateInvestor() {
-    if (
-      !feeInput ||
-      !investorSlider ||
-      !yearsSlider ||
-      !growthSlider ||
-      !discountSlider
-    )
-      return;
-    if (!summaryBox || !jsonBox) return;
+  const feeYear = parseFloat(feeInput.value || "0");
+  const investorShare = parseFloat(investorSlider.value || "0");
+  const years = parseInt(yearsSlider.value || "0", 10);
+  const growth = parseFloat(growthSlider.value || "0");
+  const discount = parseFloat(discountSlider.value || "0");
 
-    const feeYear = parseFloat(feeInput.value || "0");
-    const investorShare = parseFloat(investorSlider.value || "0");
-    const years = parseInt(yearsSlider.value || "0", 10);
-    const growth = parseFloat(growthSlider.value || "0");
-    const discount = parseFloat(discountSlider.value || "0");
-
-    if (!feeYear || !years || investorShare <= 0) {
-      summaryBox.textContent = "Set fee, investor share and years.";
-      return;
+  if (!feeYear || !years || investorShare <= 0) {
+    summaryBox.textContent = "Set fee, investor share and years.";
+    jsonBox.textContent = "";
+    if (investorChartInstance) {
+      investorChartInstance.destroy();
+      investorChartInstance = null;
     }
+    return;
+  }
 
-    const k0 = feeYear * investorShare;
-    const g = growth;
-    const d = discount;
+  // Logik wie vorher
+  const cashflows = [];
+  let npv = 0;
+  const k0 = feeYear * investorShare;
 
-    const cashflows = [];
-    let npv = 0;
-    for (let t = 1; t <= years; t++) {
-      const cf = k0 * Math.pow(1 + g, t - 1);
-      cashflows.push(cf);
-      const discountFactor = Math.pow(1 + d, t);
-      npv += cf / discountFactor;
-    }
+  for (let t = 1; t <= years; t++) {
+    const cf = k0 * Math.pow(1 + growth, t - 1);
+    cashflows.push(cf);
+    npv += cf / Math.pow(1 + discount, t);
+  }
 
-    const totalCash = cashflows.reduce((a, b) => a + b, 0);
+  const totalCash = cashflows.reduce((a, b) => a + b, 0);
 
-    const result = {
+  summaryBox.textContent =
+    `Total cashflow (undiscounted): ${totalCash.toFixed(2)} KCT\n` +
+    `NPV (discounted): ${npv.toFixed(2)} KCT\n` +
+    `Years: ${years}, Share: ${(investorShare * 100).toFixed(1)} %, ` +
+    `Growth: ${(growth * 100).toFixed(1)} %, Discount: ${(discount * 100).toFixed(1)} %`;
+
+  jsonBox.textContent = JSON.stringify(
+    {
       yearly_fee_total: feeYear,
       investor_share: investorShare,
       years,
       growth,
       discount,
-      total_cashflow_kct: totalCash,
-      npv_kct: npv,
-      yearly_cashflows: cashflows,
-    };
+      cashflows,
+      total_cash_undiscounted: totalCash,
+      npv_discounted: npv,
+    },
+    null,
+    2
+  );
 
-    summaryBox.textContent =
-      `Total cashflow (undiscounted): ${totalCash.toFixed(2)} KCT\n` +
-      `NPV (discounted): ${npv.toFixed(2)} KCT\n` +
-      `Years: ${years}, Share: ${(investorShare * 100).toFixed(
-        1
-      )} %, ` +
-      `Growth: ${(growth * 100).toFixed(
-        1
-      )} %, Discount: ${(discount * 100).toFixed(1)} %`;
+  const canvas = document.getElementById("investorChart");
+  if (!canvas || !window.Chart) return;
 
-    jsonBox.textContent = JSON.stringify(result, null, 2);
+  const ctx = canvas.getContext("2d");
+  const labels = cashflows.map((_, i) => `Year ${i + 1}`);
 
-    const canvas = document.getElementById("investorChart");
-    if (canvas && window.Chart) {
-      const ctx = canvas.getContext("2d");
-      const labels = cashflows.map((_, i) => `Year ${i + 1}`);
-      const data = {
-        labels,
-        datasets: [
-          {
-            label: "Investor cashflow (KCT/year)",
-            data: cashflows,
-            tension: 0.35,
-            fill: false,
-          },
-        ],
-      };
-      const options = {
-        plugins: { legend: { display: true } },
-        scales: {
-          x: { display: true, grid: { display: false } },
-          y: { display: true, beginAtZero: true },
-        },
-      };
+  // Premium Gradient Fill
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
+  gradient.addColorStop(0, "rgba(0, 227, 192, 0.55)");
+  gradient.addColorStop(1, "rgba(0, 227, 192, 0.03)");
 
-      if (!investorChartInstance) {
-        investorChartInstance = new Chart(ctx, {
-  type: "line",
-  data,
-  options: {
+  const data = {
+    labels,
+    datasets: [
+      {
+        label: "Investor cashflow (KCT/year)",
+        data: cashflows,
+        borderColor: "#00e3c0",
+        backgroundColor: gradient,
+        borderWidth: 2.4,
+        tension: 0.35,
+        pointRadius: 0,
+        fill: true,
+      },
+    ],
+  };
+
+  const options = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: {
-      intersect: false,
-      mode: "index"
-    },
     plugins: {
-      legend: {
-        display: false
-      },
+      legend: { display: false },
       tooltip: {
         backgroundColor: "rgba(0,0,0,0.75)",
         titleColor: "#00e3c0",
@@ -494,58 +479,35 @@ function attachInvestorUI() {
         borderColor: "rgba(0,227,192,0.4)",
         borderWidth: 1,
         callbacks: {
-          label: (ctx) => `${formatNumber(ctx.parsed.y)} KCT/year`
-        }
-      }
+          label: (ctx) =>
+            `${Number(ctx.parsed.y).toLocaleString()} KCT / year`,
+        },
+      },
     },
     scales: {
       x: {
-        grid: {
-          display: false
-        },
+        grid: { display: false },
         ticks: {
-          color: "rgba(180,200,255,0.7)",
-          font: { size: 11 }
-        }
+          color: "rgba(180,200,255,0.8)",
+          font: { size: 11 },
+        },
       },
       y: {
         beginAtZero: true,
-        grid: {
-          color: "rgba(120,150,220,0.15)",
-          lineWidth: 1
-        },
+        grid: { color: "rgba(120,150,220,0.12)" },
         ticks: {
           color: "rgba(200,220,255,0.85)",
           font: { size: 11 },
-          callback: (value) => formatNumber(value)
-        }
-      }
-    },
-    animations: {
-      tension: {
-        duration: 900,
-        easing: "easeInOutQuart",
-        from: 0.2,
-        to: 0.6,
-        loop: false
-      }
-    },
-    elements: {
-      line: {
-        borderWidth: 2.6,
-        borderColor: "#00e3c0",
-        backgroundColor: gradient,
-        tension: 0.33
+          callback: (v) => Number(v).toLocaleString(),
+        },
       },
-      point: {
-        radius: 0,
-        hoverRadius: 5,
-        hoverBackgroundColor: "#00e3c0",
-        hoverBorderColor: "#00e3c0"
-      }
-    }
-  }
-});
+    },
+  };
+
+  if (investorChartInstance) investorChartInstance.destroy();
+  investorChartInstance = new Chart(ctx, { type: "line", data, options });
+}
+
 
 
 // ================= Treasury Vesting =================
@@ -585,104 +547,94 @@ function attachTreasuryUI() {
   }
 
   function simulateTreasury() {
-    if (!totalInput || !yearsSlider || !cliffSlider || !summaryBox) return;
+  const total = parseFloat(totalInput.value || "0");
+  const years = parseInt(yearsSlider.value || "0", 10);
+  const cliffMonths = parseInt(cliffSlider.value || "0", 10);
 
-    const total = parseFloat(totalInput.value || "0");
-    const years = parseInt(yearsSlider.value || "0", 10);
-    const cliffMonths = parseInt(cliffSlider.value || "0", 10);
+  if (!total || !years) {
+    summaryBox.textContent = "Set total treasury and vesting duration.";
+    return;
+  }
 
-    if (!total || !years) {
-      summaryBox.textContent =
-        "Set total treasury and vesting duration.";
-      return;
+  const monthsTotal = years * 12;
+  const monthsVesting = Math.max(0, monthsTotal - cliffMonths);
+  const monthlyRelease = monthsVesting > 0 ? total / monthsVesting : 0;
+
+  const months = [];
+  const released = [];
+  const cumulative = [];
+
+  let cum = 0;
+  for (let m = 1; m <= monthsTotal; m++) {
+    months.push(m);
+    let rel = 0;
+    if (m > cliffMonths && monthsVesting > 0) {
+      rel = monthlyRelease;
+      cum = Math.min(total, cum + rel);
+      if (cum === total) rel = Math.max(0, rel - (cum - total));
     }
+    released.push(rel);
+    cumulative.push(cum);
+  }
 
-    const monthsTotal = years * 12;
-    const monthsVesting = Math.max(0, monthsTotal - cliffMonths);
-    if (monthsVesting <= 0) {
-      summaryBox.textContent =
-        "Cliff is equal or longer than vesting period.";
-      return;
-    }
+  summaryBox.textContent =
+    `Total Treasury: ${total.toLocaleString()} KCT\n` +
+    `Duration: ${years} years (${monthsTotal} months)\n` +
+    `Cliff: ${cliffMonths} months\n` +
+    `Monthly release after cliff: ${monthlyRelease.toFixed(2)} KCT`;
 
-    const monthlyRelease = total / monthsVesting;
+  const canvas = document.getElementById("treasuryChart");
+  if (!canvas || !window.Chart) return;
 
-    const months = [];
-    const released = [];
-    const cumulative = [];
+  const ctx = canvas.getContext("2d");
 
-    let cum = 0;
-    for (let m = 0; m < monthsTotal; m++) {
-      months.push(m + 1);
-      let rel = 0;
-      if (m >= cliffMonths && cum < total) {
-        rel = monthlyRelease;
-        cum += rel;
-        if (cum > total) {
-          rel -= cum - total;
-          cum = total;
-        }
-      }
-      released.push(rel);
-      cumulative.push(cum);
-    }
+  const gradMonthly = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
+  gradMonthly.addColorStop(0, "rgba(0, 227, 192, 0.55)");
+  gradMonthly.addColorStop(1, "rgba(0, 227, 192, 0.05)");
 
-    summaryBox.textContent =
-      `Total Treasury: ${formatNumber(total)} KCT\n` +
-      `Duration: ${years} years (${monthsTotal} months)\n` +
-      `Cliff: ${cliffMonths} months\n` +
-      `Monthly release after cliff: ${monthlyRelease.toFixed(2)} KCT`;
+  const gradCum = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
+  gradCum.addColorStop(0, "rgba(244, 63, 94, 0.75)");
+  gradCum.addColorStop(1, "rgba(244, 63, 94, 0.15)");
 
-    const canvas = document.getElementById("treasuryChart");
-    if (canvas && window.Chart) {
-      const ctx = canvas.getContext("2d");
-      const data = {
-        labels: months.map((m) => `M${m}`),
-        datasets: [
-          {
-            label: "Monthly release (KCT)",
-            data: released,
-            tension: 0.25,
-            fill: false,
-          },
-          {
-            label: "Cumulative vested (KCT)",
-            data: cumulative,
-            tension: 0.25,
-            fill: false,
-          },
-        ],
-      };
-      const options = {
-        plugins: { legend: { display: true } },
-        scales: {
-          x: { display: false },
-          y: { display: true, beginAtZero: true },
-        },
-      };
+  const data = {
+    labels: months.map((m) => `M${m}`),
+    datasets: [
+      {
+        label: "Monthly release (KCT)",
+        data: released,
+        borderColor: "#00e3c0",
+        backgroundColor: gradMonthly,
+        borderWidth: 2.4,
+        tension: 0.28,
+        pointRadius: 0,
+        fill: true,
+      },
+      {
+        label: "Cumulative vested (KCT)",
+        data: cumulative,
+        borderColor: "#f43f5e",
+        backgroundColor: gradCum,
+        borderWidth: 2.4,
+        tension: 0.18,
+        pointRadius: 0,
+        fill: false,
+      },
+    ],
+  };
 
-      if (!treasuryChartInstance) {
-        treasuryChartInstance = new Chart(ctx, {
-  type: "line",
-  data,
-  options: {
+  const options = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: {
-      intersect: false,
-      mode: "index"
-    },
     plugins: {
       legend: {
         display: true,
         position: "bottom",
         labels: {
-          color: "rgba(215,230,255,0.95)",
+          color: "rgba(225,240,255,0.9)",
           usePointStyle: true,
           pointStyle: "circle",
-          boxWidth: 8,
-          boxHeight: 8
-        }
+          boxWidth: 10,
+        },
       },
       tooltip: {
         backgroundColor: "rgba(0,0,0,0.8)",
@@ -692,53 +644,28 @@ function attachTreasuryUI() {
         borderWidth: 1,
         callbacks: {
           label: (ctx) =>
-            `${ctx.dataset.label}: ${formatNumber(ctx.parsed.y)} KCT`
-        }
-      }
+            `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} KCT`,
+        },
+      },
     },
     scales: {
-      x: {
-        grid: {
-          display: false
-        },
-        ticks: {
-          display: false
-        }
-      },
+      x: { grid: { display: false }, ticks: { display: false } },
       y: {
         beginAtZero: true,
-        grid: {
-          color: "rgba(120,150,220,0.15)"
-        },
+        grid: { color: "rgba(120,150,220,0.12)" },
         ticks: {
           color: "rgba(200,220,255,0.85)",
           font: { size: 11 },
-          callback: (value) => formatNumber(value)
-        }
-      }
-    },
-    animations: {
-      tension: {
-        duration: 1000,
-        easing: "easeInOutQuart",
-        from: 0.2,
-        to: 0.5,
-        loop: false
-      }
-    },
-    elements: {
-      line: {
-        borderWidth: 2.4,
-        tension: 0.25
+          callback: (v) => Number(v).toLocaleString(),
+        },
       },
-      point: {
-        radius: 0,
-        hoverRadius: 5,
-        hoverBackgroundColor: "#fff"
-      }
-    }
-  }
-});
+    },
+  };
+
+  if (treasuryChartInstance) treasuryChartInstance.destroy();
+  treasuryChartInstance = new Chart(ctx, { type: "line", data, options });
+}
+
 
 
 // ================= Active Nodes / Proofs / Leaderboard =================
