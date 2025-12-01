@@ -876,8 +876,150 @@ function attachTreasuryUI() {
 }
 
 // ================= Active Nodes / Proofs / Leaderboard =================
-// (dein vorhandener Code für updateActiveNodesCard, updateProofsFeed, updateNodeLeaderboard
-// bleibt so wie er ist – den brauchst du hier NICHT zu ändern)
+
+// ----------- ACTIVE NODES CARD -----------
+
+function updateActiveNodesCard(nodes) {
+  const list = document.getElementById("node-list");
+  const countEl = document.getElementById("node-count");
+
+  if (!list || !countEl) return;
+
+  if (!nodes || nodes.length === 0) {
+    list.innerHTML = `
+      <li class="node-empty">Waiting for heartbeats…</li>
+    `;
+    countEl.textContent = "0";
+    return;
+  }
+
+  countEl.textContent = nodes.length;
+
+  list.innerHTML = nodes
+    .sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0))
+    .map((n) => {
+      const last = new Date((n.last_seen || 0) * 1000).toLocaleString();
+      const hw = n.hardware || "unknown";
+      return `
+        <li class="node-item">
+          <div class="node-id">${n.node_id}</div>
+          <div class="node-meta">
+            <span>last seen: ${last}</span>
+            <span>profile: ${hw}</span>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+
+
+// ----------- PROOF-OF-COMPUTE FEED -----------
+
+function updateProofsFeed(proofs) {
+  const tbody = document.getElementById("proofs-body");
+  const limitSel = document.getElementById("poc-limit");
+
+  if (!tbody || !limitSel) return;
+
+  if (!proofs || proofs.length === 0) {
+    tbody.innerHTML = `
+      <tr class="poc-empty-row">
+        <td colspan="5">Waiting for proofs…</td>
+      </tr>
+    `;
+    return;
+  }
+
+  const limit = parseInt(limitSel.value || "50", 10);
+
+  tbody.innerHTML = proofs
+    .slice(-limit)
+    .reverse()
+    .map((p) => {
+      const ts = new Date((p.timestamp_unix || 0) * 1000).toLocaleString();
+      return `
+        <tr>
+          <td>${p.node_id}</td>
+          <td>${p.job_id}</td>
+          <td>${(p.work_units || 0).toLocaleString()}</td>
+          <td>${(p.estimated_reward_kct || 0).toFixed(6)}</td>
+          <td>${ts}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+
+
+// ----------- NODE LEADERBOARD -----------
+
+function updateNodeLeaderboard(proofs, nodes) {
+  const tbody = document.getElementById("leaderboard-body");
+  const limitSlider = document.getElementById("lb-limit");
+
+  if (!tbody || !limitSlider) return;
+
+  if (!proofs || proofs.length === 0) {
+    tbody.innerHTML = `
+      <tr class="lb-empty-row">
+        <td colspan="5">Waiting for node activity…</td>
+      </tr>
+    `;
+    return;
+  }
+
+  // Aggregate proofs per node
+  const agg = {};
+  for (const p of proofs) {
+    if (!agg[p.node_id]) {
+      agg[p.node_id] = {
+        node_id: p.node_id,
+        proofs: 0,
+        work: 0,
+        reward: 0,
+        last_seen: 0,
+        profile: "CPU",
+      };
+    }
+    agg[p.node_id].proofs++;
+    agg[p.node_id].work += p.work_units || 0;
+    agg[p.node_id].reward += p.estimated_reward_kct || 0;
+    agg[p.node_id].last_seen = p.timestamp_unix || 0;
+  }
+
+  const grouped = Object.values(agg).sort((a, b) => b.proofs - a.proofs);
+
+  const limit = parseInt(limitSlider.value || "10", 10);
+
+  tbody.innerHTML = grouped
+    .slice(0, limit)
+    .map((n, i) => {
+      const ts = new Date(n.last_seen * 1000).toLocaleString();
+      const profile = n.profile === "GPU"
+        ? `<span class="lb-gpu-pill">GPU</span>`
+        : `<span class="lb-cpu-pill">CPU</span>`;
+
+      return `
+        <tr class="leaderboard-row">
+          <td class="lb-rank">${i + 1}</td>
+          <td class="lb-node-id">${n.node_id}</td>
+          <td class="lb-profile">
+            ${profile}
+            <span class="lb-last-seen">${ts}</span>
+          </td>
+          <td class="lb-proofs">${n.proofs}</td>
+          <td class="lb-meta">
+            ${n.work.toLocaleString()} work<br>
+            ${n.reward.toFixed(6)} KCT
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
 
 // ================= Dashboard Refresh =================
 
