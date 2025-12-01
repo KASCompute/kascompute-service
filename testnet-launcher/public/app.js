@@ -350,6 +350,39 @@ function attachInvestorUI() {
     });
   }
 
+  // ===== Presets (Conservative / Balanced / Aggressive) =====
+  const btnCons = document.getElementById("btn-preset-cons");
+  const btnBal = document.getElementById("btn-preset-bal");
+  const btnAgg = document.getElementById("btn-preset-agg");
+
+  function applyInvestorPreset(fee, share, years, growth, discount) {
+    feeInput.value = fee.toString();
+    investorSlider.value = share.toString();
+    yearsSlider.value = years.toString();
+    growthSlider.value = growth.toString();
+    discountSlider.value = discount.toString();
+
+    investorLabel.textContent = share.toFixed(2);
+    yearsLabel.textContent = years.toString();
+    growthLabel.textContent = growth.toFixed(2);
+    discountLabel.textContent = discount.toFixed(2);
+
+    markUserActive();
+  }
+
+  btnCons?.addEventListener("click", () => {
+    applyInvestorPreset(0.5, 0.20, 10, 0.01, 0.10);
+  });
+
+  btnBal?.addEventListener("click", () => {
+    applyInvestorPreset(1.0, 0.30, 10, 0.03, 0.08);
+  });
+
+  btnAgg?.addEventListener("click", () => {
+    applyInvestorPreset(2.0, 0.50, 15, 0.07, 0.05);
+  });
+
+
   function simulateInvestor() {
     const feeYear = parseFloat(feeInput?.value || "0");
     const investorShare = parseFloat(investorSlider?.value || "0");
@@ -510,13 +543,18 @@ function attachTreasuryUI() {
 
   if (btnPreset && totalInput && yearsSlider && cliffSlider) {
     btnPreset.addEventListener("click", () => {
-      totalInput.value = "1000000000";
-      yearsSlider.value = "14";
-      yearsSlider.dispatchEvent(new Event("input"));
-      cliffSlider.value = "0";
-      cliffSlider.dispatchEvent(new Event("input"));
-      markUserActive();
-    });
+  // Werte laut deinem Whitepaper
+  totalInput.value = "1000000000";  // 1B KCT Treasury
+  yearsSlider.value = "14";         // linear 14 Jahre
+  cliffSlider.value = "0";          // kein Cliff
+
+  // Labels aktualisieren
+  yearsLabel.textContent = "14";
+  cliffLabel.textContent = "0";
+
+  markUserActive();
+});
+
   }
 
   function simulateTreasury() {
