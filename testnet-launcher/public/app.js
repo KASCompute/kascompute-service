@@ -4,192 +4,6 @@
 
 const API_BASE = "/api";
 
-// ===== Auto-Refresh Control =====
-let userActive = false;
-let userActiveTimeout = null;
-
-function markUserActive() {
-  userActive = true;
-  clearTimeout(userActiveTimeout);
-  userActiveTimeout = setTimeout(() => {
-    userActive = false;
-  }, 10000); // 10 Sekunden Pause nach User-Input
-}
-
-
-// ---------- i18n (EN / DE) ----------
-
-const translations = {
-  en: {
-    "header.title": "KASCompute Testnet Dashboard",
-    "header.subtitle":
-      "Emission, investor, treasury, active nodes, PoC & Node leaderboard tools — powered by your KCT model.",
-
-    "card.reward.title": "Reward Preview",
-    "card.reward.subtitle":
-      "Block reward per month m based on your testnet emission model (KCT model parameters).",
-    "card.reward.month": "Month (m):",
-    "card.reward.button": "Calculate",
-
-    "card.econ.title": "Token Economics",
-    "card.econ.subtitle":
-      "KCT price, market cap, investor and treasury value based on your live token model.",
-    "card.econ.price": "KCT price",
-    "card.econ.marketcap": "Market cap",
-    "card.econ.investor": "Investor value",
-    "card.econ.treasury": "Treasury value",
-    "card.econ.slider.price": "Price (USD) slider",
-    "card.econ.slider.inv": "Investor multiplier",
-    "card.econ.slider.treasury": "Treasury multiplier",
-
-    "card.investor.title": "Investor Value Flow",
-    "card.investor.subtitle":
-      "Post-mining cashflow simulation for potential investors KCT model parameters.",
-    "card.investor.presets": "Presets:",
-    "card.investor.preset.conservative": "Conservative",
-    "card.investor.preset.balanced": "Balanced",
-    "card.investor.preset.aggressive": "Aggressive",
-    "card.investor.fee": "Fee / Year (KCT):",
-    "card.investor.share": "Investor share:",
-    "card.investor.years": "Years:",
-    "card.investor.growth": "Growth:",
-    "card.investor.discount": "Discount:",
-    "card.investor.button": "Simulate",
-
-    "card.treasury.title": "Treasury Vesting",
-    "card.treasury.subtitle":
-      "Simple linear vesting model for the KCT Treasury, aligned with your draft tokenomics.",
-    "card.treasury.preset.label": "Quick setup:",
-    "card.treasury.preset.button": "Whitepaper default",
-    "card.treasury.total": "Total Treasury (KCT):",
-    "card.treasury.years": "Vesting duration:",
-    "card.treasury.cliff": "Cliff:",
-    "card.treasury.button": "Simulate Treasury Vesting",
-
-    "card.nodes.title": "Active Nodes",
-    "card.nodes.subtitle": "Live list of nodes connected to the KASCompute testnet.",
-    "card.nodes.online": "Online",
-    "card.nodes.refresh": "Refresh",
-    "card.nodes.empty": "Waiting for heartbeats…",
-
-    "card.proofs.title": "Proof-of-Compute",
-    "card.proofs.subtitle":
-      "Live feed of validated Proof-of-Compute submissions from your nodes.",
-    "card.proofs.th.node": "Node",
-    "card.proofs.th.job": "Job",
-    "card.proofs.th.work": "Work Units",
-    "card.proofs.th.reward": "Reward ≈ KCT",
-    "card.proofs.th.time": "Timestamp",
-    "card.proofs.empty": "Waiting for proofs…",
-
-    "card.lb.title": "Node Leaderboard",
-    "card.lb.subtitle":
-      "Ranked by submitted proofs and estimated KCT rewards. GPU nodes are highlighted.",
-    "card.lb.th.node": "Node",
-    "card.lb.th.profile": "Profile",
-    "card.lb.th.proofs": "Proofs",
-    "card.lb.th.workreward": "Work / Reward",
-    "card.lb.empty": "Waiting for node activity…",
-
-    "summary.title": "SUMMARY",
-    "summary.copy": "Copy summary",
-    "summary.toggle-json": "Show raw JSON",
-  },
-  de: {
-    "header.title": "KASCompute Testnet Dashboard",
-    "header.subtitle":
-      "Emission, Investoren, Treasury, aktive Nodes, PoC & Node-Leaderboard – gesteuert von deinem KCT-Modell.",
-
-    "card.reward.title": "Reward-Vorschau",
-    "card.reward.subtitle":
-      "Block-Reward pro Monat m auf Basis deines Testnet-Emissionsmodells (KCT-Parameter).",
-    "card.reward.month": "Monat (m):",
-    "card.reward.button": "Berechnen",
-
-    "card.econ.title": "Token-Ökonomie",
-    "card.econ.subtitle":
-      "KCT-Preis, Marktkapitalisierung, Investoren- und Treasury-Wert auf Basis deines Live-Tokenmodells.",
-    "card.econ.price": "KCT-Preis",
-    "card.econ.marketcap": "Marktkapitalisierung",
-    "card.econ.investor": "Investorenwert",
-    "card.econ.treasury": "Treasury-Wert",
-    "card.econ.slider.price": "Preis-Slider (USD)",
-    "card.econ.slider.inv": "Investoren-Multiplikator",
-    "card.econ.slider.treasury": "Treasury-Multiplikator",
-
-    "card.investor.title": "Investor Cashflow",
-    "card.investor.subtitle":
-      "Post-Mining-Cashflow-Simulation für potenzielle Investoren basierend auf KCT.",
-    "card.investor.presets": "Presets:",
-    "card.investor.preset.conservative": "Konservativ",
-    "card.investor.preset.balanced": "Ausgewogen",
-    "card.investor.preset.aggressive": "Aggressiv",
-    "card.investor.fee": "Gebühr / Jahr (KCT):",
-    "card.investor.share": "Investorenanteil:",
-    "card.investor.years": "Jahre:",
-    "card.investor.growth": "Wachstum:",
-    "card.investor.discount": "Diskontsatz:",
-    "card.investor.button": "Simulieren",
-
-    "card.treasury.title": "Treasury-Vesting",
-    "card.treasury.subtitle":
-      "Lineares Vesting-Modell für das KCT-Treasury, abgestimmt auf deine Tokenomics.",
-    "card.treasury.preset.label": "Schnellstart:",
-    "card.treasury.preset.button": "Whitepaper-Default",
-    "card.treasury.total": "Gesamtes Treasury (KCT):",
-    "card.treasury.years": "Vesting-Dauer:",
-    "card.treasury.cliff": "Cliff:",
-    "card.treasury.button": "Treasury-Vesting simulieren",
-
-    "card.nodes.title": "Aktive Nodes",
-    "card.nodes.subtitle": "Live-Liste der mit dem KASCompute-Testnet verbundenen Nodes.",
-    "card.nodes.online": "Online",
-    "card.nodes.refresh": "Aktualisieren",
-    "card.nodes.empty": "Warte auf Heartbeats…",
-
-    "card.proofs.title": "Proof-of-Compute",
-    "card.proofs.subtitle":
-      "Live-Feed der validierten Proof-of-Compute-Einreichungen deiner Nodes.",
-    "card.proofs.th.node": "Node",
-    "card.proofs.th.job": "Job",
-    "card.proofs.th.work": "Work Units",
-    "card.proofs.th.reward": "Reward ≈ KCT",
-    "card.proofs.th.time": "Zeitstempel",
-    "card.proofs.empty": "Warte auf Proofs…",
-
-    "card.lb.title": "Node-Leaderboard",
-    "card.lb.subtitle":
-      "Sortiert nach eingereichten Proofs und geschätzten KCT-Rewards. GPU-Nodes sind hervorgehoben.",
-    "card.lb.th.node": "Node",
-    "card.lb.th.profile": "Profil",
-    "card.lb.th.proofs": "Proofs",
-    "card.lb.th.workreward": "Work / Reward",
-    "card.lb.empty": "Warte auf Node-Aktivität…",
-
-    "summary.title": "ZUSAMMENFASSUNG",
-    "summary.copy": "Zusammenfassung kopieren",
-    "summary.toggle-json": "Roh-JSON anzeigen",
-  },
-};
-
-let currentLang = "en";
-
-function applyLanguage(lang) {
-  currentLang = lang;
-  const dict = translations[lang] || translations.en;
-  document.documentElement.setAttribute("data-lang", lang);
-
-  document.querySelectorAll("[data-i18n]").forEach((el) => {
-    const key = el.getAttribute("data-i18n");
-    const text = dict[key];
-    if (text) {
-      // Label-Spezialfall: falls Kinder (Badge) drin sind, nur den Textknoten ersetzen wäre kompliziert;
-      // hier reicht für dein UI: kompletten Text ersetzen.
-      el.textContent = text;
-    }
-  });
-}
-
 // ---------- Helper ----------
 
 async function fetchJson(path) {
@@ -257,7 +71,9 @@ function renderEconomicsOutputs() {
     const price = 1.0;
     const capTokens = baseEconomics.circulating_supply_kct ?? 0;
     const investorTokens =
-      econLastPriceUsd > 0 ? econLastInvestorUsd / econLastPriceUsd : 0;
+      econLastPriceUsd > 0
+        ? econLastInvestorUsd / econLastPriceUsd
+        : 0;
     const treasuryTokens = baseEconomics.treasury_balance_kct ?? 0;
 
     setText("kct-price", price.toFixed(4) + " KCT");
@@ -272,7 +88,10 @@ function renderEconomicsOutputs() {
   const inv = econLastInvestorUsd * fx;
   const tre = econLastTreasuryUsd * fx;
 
-  setText("kct-price", symbol + price.toFixed(4));
+  setText(
+    "kct-price",
+    symbol + price.toFixed(4)
+  );
   setText(
     "market-cap",
     symbol +
@@ -408,9 +227,7 @@ function attachRewardUI() {
   const summaryBox = document.getElementById("reward-summary");
   const jsonBox = document.getElementById("reward-json");
 
-  // ⭐ PATCH 1 → Month Slider Label Fix
   if (monthSlider && monthLabel) {
-    monthLabel.textContent = monthSlider.value; // Initial state
     monthSlider.addEventListener("input", () => {
       monthLabel.textContent = monthSlider.value;
     });
@@ -484,7 +301,6 @@ function attachRewardUI() {
   }
 }
 
-
 // ================= Investor Value Flow =================
 
 let investorChartInstance = null;
@@ -530,7 +346,8 @@ function attachInvestorUI() {
   }
 
   function applyPreset(type) {
-    if (!feeInput || !investorSlider || !growthSlider || !discountSlider) return;
+    if (!feeInput || !investorSlider || !growthSlider || !discountSlider)
+      return;
     switch (type) {
       case "conservative":
         feeInput.value = "100000";
@@ -557,13 +374,19 @@ function attachInvestorUI() {
   }
 
   if (presetConservative) {
-    presetConservative.addEventListener("click", () => applyPreset("conservative"));
+    presetConservative.addEventListener("click", () =>
+      applyPreset("conservative")
+    );
   }
   if (presetBalanced) {
-    presetBalanced.addEventListener("click", () => applyPreset("balanced"));
+    presetBalanced.addEventListener("click", () =>
+      applyPreset("balanced")
+    );
   }
   if (presetAggressive) {
-    presetAggressive.addEventListener("click", () => applyPreset("aggressive"));
+    presetAggressive.addEventListener("click", () =>
+      applyPreset("aggressive")
+    );
   }
 
   function simulateInvestor() {
@@ -630,7 +453,6 @@ function attachInvestorUI() {
     if (canvas && window.Chart) {
       const ctx = canvas.getContext("2d");
       const labels = cashflows.map((_, i) => `Year ${i + 1}`);
-
       const data = {
         labels,
         datasets: [
@@ -639,30 +461,14 @@ function attachInvestorUI() {
             data: cashflows,
             tension: 0.35,
             fill: false,
-            borderWidth: 2,
-            pointRadius: 0,
-            borderColor: "rgba(0, 227, 192, 0.9)",
           },
         ],
       };
-
       const options = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, position: "top" },
-        },
+        plugins: { legend: { display: true } },
         scales: {
-          x: {
-            display: true,
-            grid: { display: false },
-            ticks: { maxTicksLimit: 8 },
-          },
-          y: {
-            display: true,
-            beginAtZero: true,
-            grid: { color: "rgba(255,255,255,0.06)" },
-          },
+          x: { display: true, grid: { display: false } },
+          y: { display: true, beginAtZero: true },
         },
       };
 
@@ -678,7 +484,7 @@ function attachInvestorUI() {
         investorChartInstance.update();
       }
     }
-  } // <- schließt simulateInvestor
+  }
 
   if (btnSim) {
     btnSim.addEventListener("click", (e) => {
@@ -708,7 +514,7 @@ function attachInvestorUI() {
       }
     });
   }
-} // <- schließt attachInvestorUI
+}
 
 // ================= Treasury Vesting =================
 
@@ -798,48 +604,28 @@ function attachTreasuryUI() {
     const canvas = document.getElementById("treasuryChart");
     if (canvas && window.Chart) {
       const ctx = canvas.getContext("2d");
-
       const data = {
         labels: months.map((m) => `M${m}`),
         datasets: [
           {
             label: "Monthly release (KCT)",
             data: released,
-            tension: 0.35,
+            tension: 0.25,
             fill: false,
-            borderWidth: 2,
-            pointRadius: 0,
-            borderColor: "rgba(0, 227, 192, 0.9)",
           },
           {
             label: "Cumulative vested (KCT)",
             data: cumulative,
-            tension: 0.35,
+            tension: 0.25,
             fill: false,
-            borderWidth: 2,
-            pointRadius: 0,
-            borderColor: "rgba(155, 196, 255, 0.9)",
           },
         ],
       };
-
       const options = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, position: "top" },
-        },
+        plugins: { legend: { display: true } },
         scales: {
-          x: {
-            display: true,
-            grid: { display: false },
-            ticks: { maxTicksLimit: 10 },
-          },
-          y: {
-            display: true,
-            beginAtZero: true,
-            grid: { color: "rgba(255,255,255,0.06)" },
-          },
+          x: { display: false },
+          y: { display: true, beginAtZero: true },
         },
       };
 
@@ -855,6 +641,16 @@ function attachTreasuryUI() {
         treasuryChartInstance.update();
       }
     }
+
+    if (btnCopy) {
+      btnCopy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(summaryBox.textContent || "");
+        } catch (e) {
+          console.error(e);
+        }
+      });
+    }
   }
 
   if (btnSim) {
@@ -863,198 +659,173 @@ function attachTreasuryUI() {
       simulateTreasury();
     });
   }
-
-  if (btnCopy && summaryBox) {
-    btnCopy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(summaryBox.textContent || "");
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
 }
 
 // ================= Active Nodes / Proofs / Leaderboard =================
 
-// ----------- ACTIVE NODES CARD -----------
-
-function updateActiveNodesCard(nodes) {
-  const list = document.getElementById("node-list");
+function updateActiveNodesCard(activeNodes) {
   const countEl = document.getElementById("node-count");
+  const listEl = document.getElementById("node-list");
 
-  if (!list || !countEl) return;
+  if (countEl) countEl.textContent = (activeNodes || []).length.toString();
+  if (!listEl) return;
 
-  if (!nodes || nodes.length === 0) {
-    list.innerHTML = `
-      <li class="node-empty">Waiting for heartbeats…</li>
-    `;
-    countEl.textContent = "0";
+  listEl.innerHTML = "";
+
+  if (!activeNodes || activeNodes.length === 0) {
+    const li = document.createElement("li");
+    li.className = "node-empty";
+    li.textContent = "Waiting for heartbeats…";
+    listEl.appendChild(li);
     return;
   }
 
-  countEl.textContent = nodes.length;
-
-  list.innerHTML = nodes
-    .sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0))
-    .map((n) => {
-      const last = new Date((n.last_seen || 0) * 1000).toLocaleString();
-      const hw = n.hardware || "unknown";
-      return `
-        <li class="node-item">
-          <div class="node-id">${n.node_id}</div>
-          <div class="node-meta">
-            <span>last seen: ${last}</span>
-            <span>profile: ${hw}</span>
-          </div>
-        </li>
-      `;
-    })
-    .join("");
+  activeNodes.forEach((n) => {
+    const li = document.createElement("li");
+    li.className = "node-item";
+    const lastSeen = n.last_seen_unix
+      ? new Date(n.last_seen_unix * 1000).toLocaleString()
+      : "-";
+    li.innerHTML = `
+      <div class="node-id">${n.node_id}</div>
+      <div class="node-meta">${n.compute_profile || "-"} • last seen ${lastSeen}</div>
+    `;
+    listEl.appendChild(li);
+  });
 }
-
-
-
-// ----------- PROOF-OF-COMPUTE FEED -----------
 
 function updateProofsFeed(proofs) {
   const tbody = document.getElementById("proofs-body");
-  const limitSel = document.getElementById("poc-limit");
+  if (!tbody) return;
 
-  if (!tbody || !limitSel) return;
+  tbody.innerHTML = "";
 
   if (!proofs || proofs.length === 0) {
-    tbody.innerHTML = `
-      <tr class="poc-empty-row">
-        <td colspan="5">Waiting for proofs…</td>
-      </tr>
-    `;
+    const tr = document.createElement("tr");
+    tr.className = "poc-empty-row";
+    tr.innerHTML = `<td colspan="5">Waiting for proofs…</td>`;
+    tbody.appendChild(tr);
     return;
   }
 
-  const limit = parseInt(limitSel.value || "50", 10);
+  proofs.slice(0, 100).forEach((p) => {
+    const unix = p.timestamp_unix ?? p.timestamp ?? 0;
+    const dateStr = unix ? new Date(unix * 1000).toLocaleString() : "-";
+    const wu = p.work_units ?? 0;
+    const reward = p.estimated_reward_kct ?? 0;
 
-  tbody.innerHTML = proofs
-    .slice(-limit)
-    .reverse()
-    .map((p) => {
-      const ts = new Date((p.timestamp_unix || 0) * 1000).toLocaleString();
-      return `
-        <tr>
-          <td>${p.node_id}</td>
-          <td>${p.job_id}</td>
-          <td>${(p.work_units || 0).toLocaleString()}</td>
-          <td>${(p.estimated_reward_kct || 0).toFixed(6)}</td>
-          <td>${ts}</td>
-        </tr>
-      `;
-    })
-    .join("");
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${p.node_id ?? "-"}</td>
+      <td>${p.job_id ?? "-"}</td>
+      <td>${wu.toLocaleString()}</td>
+      <td>${reward.toFixed(6)}</td>
+      <td>${dateStr}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
 
-
-
-// ----------- NODE LEADERBOARD -----------
-
-function updateNodeLeaderboard(proofs, nodes) {
+function updateNodeLeaderboard(proofs, activeNodes) {
   const tbody = document.getElementById("leaderboard-body");
-  const limitSlider = document.getElementById("lb-limit");
+  if (!tbody) return;
 
-  if (!tbody || !limitSlider) return;
+  tbody.innerHTML = "";
 
   if (!proofs || proofs.length === 0) {
-    tbody.innerHTML = `
-      <tr class="lb-empty-row">
-        <td colspan="5">Waiting for node activity…</td>
-      </tr>
-    `;
+    const tr = document.createElement("tr");
+    tr.className = "lb-empty-row";
+    tr.innerHTML = `<td colspan="5">Waiting for node activity…</td>`;
+    tbody.appendChild(tr);
     return;
   }
 
-  // Aggregate proofs per node
-  const agg = {};
-  for (const p of proofs) {
-    if (!agg[p.node_id]) {
-      agg[p.node_id] = {
-        node_id: p.node_id,
-        proofs: 0,
-        work: 0,
-        reward: 0,
-        last_seen: 0,
-        profile: "CPU",
-      };
+  const stats = new Map();
+  proofs.forEach((p) => {
+    const id = p.node_id ?? "unknown";
+    const wu = p.work_units ?? 0;
+    const reward = p.estimated_reward_kct ?? 0;
+
+    if (!stats.has(id)) {
+      stats.set(id, { nodeId: id, proofs: 0, workUnits: 0, rewards: 0 });
     }
-    agg[p.node_id].proofs++;
-    agg[p.node_id].work += p.work_units || 0;
-    agg[p.node_id].reward += p.estimated_reward_kct || 0;
-    agg[p.node_id].last_seen = p.timestamp_unix || 0;
-  }
+    const s = stats.get(id);
+    s.proofs += 1;
+    s.workUnits += wu;
+    s.rewards += reward;
+  });
 
-  const grouped = Object.values(agg).sort((a, b) => b.proofs - a.proofs);
+  const profileMap = new Map();
+  (activeNodes || []).forEach((n) => {
+    profileMap.set(n.node_id, n.compute_profile || "-");
+  });
 
-  const limit = parseInt(limitSlider.value || "10", 10);
+  const rows = Array.from(stats.values()).sort((a, b) => b.rewards - a.rewards);
 
-  tbody.innerHTML = grouped
-    .slice(0, limit)
-    .map((n, i) => {
-      const ts = new Date(n.last_seen * 1000).toLocaleString();
-      const profile = n.profile === "GPU"
-        ? `<span class="lb-gpu-pill">GPU</span>`
-        : `<span class="lb-cpu-pill">CPU</span>`;
-
-      return `
-        <tr class="leaderboard-row">
-          <td class="lb-rank">${i + 1}</td>
-          <td class="lb-node-id">${n.node_id}</td>
-          <td class="lb-profile">
-            ${profile}
-            <span class="lb-last-seen">${ts}</span>
-          </td>
-          <td class="lb-proofs">${n.proofs}</td>
-          <td class="lb-meta">
-            ${n.work.toLocaleString()} work<br>
-            ${n.reward.toFixed(6)} KCT
-          </td>
-        </tr>
-      `;
-    })
-    .join("");
+  rows.slice(0, 10).forEach((s, idx) => {
+    const tr = document.createElement("tr");
+    const profile = profileMap.get(s.nodeId) || "-";
+    const workReward =
+      `${s.workUnits.toLocaleString()} / ${s.rewards.toFixed(4)} KCT`;
+    tr.innerHTML = `
+      <td>${idx + 1}</td>
+      <td>${s.nodeId}</td>
+      <td>${profile}</td>
+      <td>${s.proofs}</td>
+      <td>${workReward}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
 
-// ================= Dashboard Refresh =================
+// ================= API / Header Badges =================
+
+function applyEmissionAndEconomics(data) {
+  emissionState = data.emission || null;
+  const econ = data.economics || null;
+  baseEconomics = econ;
+
+  const nodesCount = (data.active_nodes || []).length;
+  const proofsCount =
+    data.proofs_total_count != null
+      ? data.proofs_total_count
+      : (data.proofs_recent || []).length;
+
+  setText("stat-nodes", `Nodes: ${nodesCount}`);
+  setText("stat-proofs", `Proofs: ${proofsCount}`);
+
+  updateEmissionCardsFromState();
+  if (econ) updateEconomicsCards(econ);
+}
 
 async function refreshDashboard() {
   try {
-    const res = await fetch("/api/state");
-    if (!res.ok) {
-      console.error("Dashboard refresh failed.");
-      return;
+    const apiEl = document.getElementById("api-status");
+    if (apiEl) {
+      apiEl.textContent = "Checking API…";
+      apiEl.classList.remove("pill-active");
     }
 
-    const data = await res.json();
+    const data = await fetchJson("/state");
 
-const nodes =
-  data.active_nodes ||
-  data.nodes ||
-  [];
+    if (apiEl) {
+      apiEl.textContent = "API online";
+      apiEl.classList.add("pill-active");
+    }
 
-const proofs =
-  data.proofs_recent ||
-  data.proofs ||
-  [];
-
-window.__lastNodes = nodes;
-window.__lastProofs = proofs;
-
-updateActiveNodesCard(nodes);
-updateProofsFeed(proofs);
-updateNodeLeaderboard(proofs, nodes);
-
-  } catch (e) {
-    console.error("refreshDashboard error", e);
+    applyEmissionAndEconomics(data);
+    updateActiveNodesCard(data.active_nodes || []);
+    updateProofsFeed(data.proofs_recent || []);
+    updateNodeLeaderboard(data.proofs_recent || [], data.active_nodes || []);
+  } catch (err) {
+    console.error("Failed to refresh dashboard:", err);
+    const apiEl = document.getElementById("api-status");
+    if (apiEl) {
+      apiEl.textContent = "API offline";
+      apiEl.classList.remove("pill-active");
+    }
   }
 }
-
 
 // ================= Global Listener (Sprache / Currency / Theme) =================
 
@@ -1076,14 +847,12 @@ function attachGlobalListeners() {
   const btnLangEn = document.getElementById("btn-lang-en");
   const btnLangDe = document.getElementById("btn-lang-de");
   if (btnLangEn && btnLangDe) {
-    btnLangEn.addEventListener("click", () => {
-      togglePillGroup("btn-lang-en", ["btn-lang-en", "btn-lang-de"]);
-      applyLanguage("en");
-    });
-    btnLangDe.addEventListener("click", () => {
-      togglePillGroup("btn-lang-de", ["btn-lang-en", "btn-lang-de"]);
-      applyLanguage("de");
-    });
+    btnLangEn.addEventListener("click", () =>
+      togglePillGroup("btn-lang-en", ["btn-lang-en", "btn-lang-de"])
+    );
+    btnLangDe.addEventListener("click", () =>
+      togglePillGroup("btn-lang-de", ["btn-lang-en", "btn-lang-de"])
+    );
   }
 
   const btnCurKct = document.getElementById("btn-cur-kct");
@@ -1132,61 +901,18 @@ function attachGlobalListeners() {
   const priceSlider = document.getElementById("kct-price-slider");
   const invSlider = document.getElementById("investor-multiplier-slider");
   const treSlider = document.getElementById("treasury-multiplier-slider");
-  if (priceSlider)
-    priceSlider.addEventListener("input", () => {
-      markUserActive();
-      recomputeFromSliders();
-    });
-  if (invSlider)
-    invSlider.addEventListener("input", () => {
-      markUserActive();
-      recomputeFromSliders();
-    });
-  if (treSlider)
-    treSlider.addEventListener("input", () => {
-      markUserActive();
-      recomputeFromSliders();
-    });
-
-  // ⭐ PATCH 3: PoC Limit Listener
-  const pocLimit = document.getElementById("poc-limit");
-  if (pocLimit) {
-    pocLimit.addEventListener("change", () => {
-      markUserActive();
-      updateProofsFeed(window.__lastProofs || []);
-    });
-  }
-
-  // ⭐ PATCH 4: Leaderboard-Limit-Slider
-  const lbLimit = document.getElementById("lb-limit");
-  const lbLimitLabel = document.getElementById("lb-limit-label");
-
-  if (lbLimit) {
-    if (lbLimitLabel) {
-      lbLimitLabel.textContent = lbLimit.value;
-    }
-
-    lbLimit.addEventListener("input", () => {
-      markUserActive();
-      if (lbLimitLabel) {
-        lbLimitLabel.textContent = lbLimit.value;
-      }
-      updateNodeLeaderboard(window.__lastProofs || [], window.__lastNodes || []);
-    });
-  }
-} // <- schließt attachGlobalListeners
+  if (priceSlider) priceSlider.addEventListener("input", recomputeFromSliders);
+  if (invSlider) invSlider.addEventListener("input", recomputeFromSliders);
+  if (treSlider) treSlider.addEventListener("input", recomputeFromSliders);
+}
 
 // ================= Init =================
 
 document.addEventListener("DOMContentLoaded", () => {
-  applyLanguage("en"); // Default
   attachRewardUI();
   attachInvestorUI();
   attachTreasuryUI();
   attachGlobalListeners();
   refreshDashboard();
-
-  setInterval(() => {
-    if (!userActive) refreshDashboard();
-  }, 8000);
-}); // <- schließt DOMContentLoaded
+  setInterval(refreshDashboard, 8000);
+});

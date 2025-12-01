@@ -14,231 +14,212 @@ use std::{
 use tower_http::services::{ServeDir, ServeFile};
 
 // =======================
-// Shared State
+// Helper
 // =======================
 
-#[derive(Clone)]
-struct AppState {
-    inner: Arc<InnerState>,
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
-struct InnerState {
-    nodes: Mutex<HashMap<String, NodeInfo>>,
-    proofs: Mutex<Vec<ProofEntry>>,
-    emission: EmissionState,
-    economics: EconomicsState,
+// =======================
+// Datenstrukturen
+// =======================
+
+#[derive(Clone, Serialize)]
+struct EmissionState {
+    total_supply_kct: u64,
+    mined_supply_kct: u64,
+    remaining_supply_kct: u64,
+    emission_month: u32,
+    monthly_decay_pct: f64,
+    current_block_reward_kct: f64,
 }
 
-#[derive(Clone, Debug)]
-struct NodeInfo {
-    hardware: String,
-    last_seen: u64,
+#[derive(Clone, Serialize)]
+struct EconomicState {
+    kct_price_usd: f64,
+    circulating_supply_kct: u64,
+    market_cap_usd: f64,
+    investor_value_usd: f64,
+    treasury_balance_kct: u64,
+    treasury_value_usd: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Deserialize)]
+struct NodeState {
+    node_id: String,
+    last_seen_unix: u64,
+    compute_profile: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 struct ProofEntry {
     node_id: String,
     job_id: String,
     work_units: u64,
     estimated_reward_kct: f64,
+    proof_hash: String,
     timestamp_unix: u64,
 }
 
-// =======================
-// API Types (JSON)
-// =======================
-
-#[derive(Serialize, Deserialize, Clone)]
-struct NodeState {
-    node_id: String,
-    hardware: String,
-    last_seen: u64,
+struct AppState {
+    emission: Mutex<EmissionState>,
+    economics: Mutex<EconomicState>,
+    nodes: Mutex<HashMap<String, NodeState>>,
+    proofs: Mutex<Vec<ProofEntry>>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct ProofState {
+// =======================
+// Request-Bodies
+// =======================
+
+#[derive(Deserialize)]
+struct HeartbeatBody {
+    node_id: String,
+    public_key_hex: String,
+    compute_profile: String,
+}
+
+#[derive(Deserialize)]
+struct ProofBody {
     node_id: String,
     job_id: String,
     work_units: u64,
     estimated_reward_kct: f64,
-    timestamp_unix: u64,
+    proof_hash: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct EmissionState {
-    total_supply_kct: f64,
-    mined_supply_kct: f64,
-    remaining_supply_kct: f64,
-    emission_month: u64,
-    monthly_decay_pct: f64,
-    current_block_reward_kct: f64,
+// =======================
+// Response-Structs
+// =======================
+
+#[derive(Serialize)]
+struct ActiveNodesResponse {
+    active_nodes: Vec<NodeState>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct EconomicsState {
-    kct_price_usd: f64,
-    circulating_supply_kct: f64,
-    treasury_balance_kct: f64,
-    market_cap_usd: f64,
-    investor_value_usd: f64,
-    treasury_value_usd: f64,
+#[derive(Serialize)]
+struct ProofsResponse {
+    proofs: Vec<ProofEntry>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct StateResponse {
-    nodes: Vec<NodeState>,
-    proofs: Vec<ProofState>,
+#[derive(Serialize)]
+struct DashboardState {
     emission: EmissionState,
-    economics: EconomicsState,
-}
-
-// Heartbeat-Request vom Node
-#[derive(Deserialize)]
-struct HeartbeatRequest {
-    node_id: String,
-    #[serde(default)]
-    hardware: Option<String>,
-}
-
-// Heartbeat-Response
-#[derive(Serialize)]
-struct HeartbeatResponse {
-    ok: bool,
-    timestamp_unix: u64,
-}
-
-// Proof-Request vom Node
-#[derive(Deserialize)]
-struct ProofRequest {
-    node_id: String,
-    job_id: String,
-    work_units: u64,
-}
-
-// Proof-Response
-#[derive(Serialize)]
-struct ProofResponse {
-    ok: bool,
-    timestamp_unix: u64,
-    estimated_reward_kct: f64,
+    economics: EconomicState,
+    active_nodes: Vec<NodeState>,
+    proofs_recent: Vec<ProofEntry>,
+    proofs_total_count: usize, // 🔥 NEU: Gesamtzahl aller Proofs
 }
 
 // =======================
-// Helper
+// Handler
 // =======================
 
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-}
+/// POST /api/node/heartbeat
+async fn post_heartbeat(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<HeartbeatBody>,
+) -> Json<serde_json::Value> {
+    let now = unix_now();
 
-// =======================
-// Handlers
-// =======================
-
-async fn health() -> &'static str {
-    "ok"
-}
-
-// Node Heartbeat: /api/node/heartbeat
-async fn heartbeat(
-    State(state): State<AppState>,
-    Json(payload): Json<HeartbeatRequest>,
-) -> Json<HeartbeatResponse> {
-    let now = now_unix();
-    let hw = payload
-        .hardware
-        .unwrap_or_else(|| "unknown".to_string());
-
-    {
-        let mut nodes = state.inner.nodes.lock().unwrap();
-        nodes.insert(
-            payload.node_id.clone(),
-            NodeInfo {
-                hardware: hw,
-                last_seen: now,
-            },
-        );
-    }
-
-    Json(HeartbeatResponse {
-        ok: true,
-        timestamp_unix: now,
-    })
-}
-
-// Proof-of-Compute: /api/node/proof
-async fn submit_proof(
-    State(state): State<AppState>,
-    Json(payload): Json<ProofRequest>,
-) -> Json<ProofResponse> {
-    let now = now_unix();
-
-    // ganz simple Beispiel-Reward: proportional zu work_units
-    let base_reward = state.inner.emission.current_block_reward_kct;
-    let estimated = (payload.work_units as f64 / 1_000_000.0) * base_reward;
-
-    let entry = ProofEntry {
-        node_id: payload.node_id.clone(),
-        job_id: payload.job_id.clone(),
-        work_units: payload.work_units,
-        estimated_reward_kct: estimated,
-        timestamp_unix: now,
+    let mut nodes = state.nodes.lock().unwrap();
+    let node = NodeState {
+        node_id: body.node_id.clone(),
+        last_seen_unix: now,
+        compute_profile: body.compute_profile.clone(),
     };
+    nodes.insert(body.node_id.clone(), node);
 
-    {
-        let mut proofs = state.inner.proofs.lock().unwrap();
-        proofs.push(entry);
-    }
-
-    Json(ProofResponse {
-        ok: true,
-        timestamp_unix: now,
-        estimated_reward_kct: estimated,
-    })
+    Json(serde_json::json!({
+        "status": "ok",
+        "timestamp_unix": now
+    }))
 }
 
-// State für Dashboard: /api/state
-async fn get_state(State(state): State<AppState>) -> Json<StateResponse> {
-    // Kopien aus dem State ziehen
-    let nodes_map = state.inner.nodes.lock().unwrap();
-    let proofs_vec = state.inner.proofs.lock().unwrap();
+/// POST /api/node/proof
+async fn post_proof(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ProofBody>,
+) -> Json<serde_json::Value> {
+    let now = unix_now();
 
-    let mut nodes: Vec<NodeState> = nodes_map
-        .iter()
-        .map(|(node_id, info)| NodeState {
-            node_id: node_id.clone(),
-            hardware: info.hardware.clone(),
-            last_seen: info.last_seen,
-        })
+    let mut proofs = state.proofs.lock().unwrap();
+    proofs.push(ProofEntry {
+        node_id: body.node_id,
+        job_id: body.job_id,
+        work_units: body.work_units,
+        estimated_reward_kct: body.estimated_reward_kct,
+        proof_hash: body.proof_hash,
+        timestamp_unix: now,
+    });
+
+    // nicht unendlich wachsen lassen
+    if proofs.len() > 1000 {
+        let drop = proofs.len() - 1000;
+        proofs.drain(0..drop);
+    }
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "timestamp_unix": now
+    }))
+}
+
+/// GET /api/nodes/active
+async fn get_active_nodes(State(state): State<Arc<AppState>>) -> Json<ActiveNodesResponse> {
+    let now = unix_now();
+    let nodes = state.nodes.lock().unwrap();
+
+    let active: Vec<NodeState> = nodes
+        .values()
+        .filter(|n| now.saturating_sub(n.last_seen_unix) <= 20)
+        .cloned()
         .collect();
 
-    let mut proofs: Vec<ProofState> = proofs_vec
-        .iter()
-        .map(|p| ProofState {
-            node_id: p.node_id.clone(),
-            job_id: p.job_id.clone(),
-            work_units: p.work_units,
-            estimated_reward_kct: p.estimated_reward_kct,
-            timestamp_unix: p.timestamp_unix,
-        })
+    Json(ActiveNodesResponse { active_nodes: active })
+}
+
+/// GET /api/proofs/recent
+async fn get_recent_proofs(State(state): State<Arc<AppState>>) -> Json<ProofsResponse> {
+    let proofs = state.proofs.lock().unwrap();
+
+    let mut list: Vec<ProofEntry> = proofs.clone();
+    list.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
+    list.truncate(100);
+
+    Json(ProofsResponse { proofs: list })
+}
+
+/// GET /api/state – alles fürs Dashboard
+async fn get_dashboard_state(State(state): State<Arc<AppState>>) -> Json<DashboardState> {
+    let emission = state.emission.lock().unwrap().clone();
+    let economics = state.economics.lock().unwrap().clone();
+
+    let now = unix_now();
+    let nodes_map = state.nodes.lock().unwrap();
+    let active_nodes: Vec<NodeState> = nodes_map
+        .values()
+        .filter(|n| now.saturating_sub(n.last_seen_unix) <= 20)
+        .cloned()
         .collect();
 
-    // neueste zuerst
-    nodes.sort_by_key(|n| std::cmp::Reverse(n.last_seen));
-    proofs.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
+    let proofs = state.proofs.lock().unwrap();
+    let proofs_total_count = proofs.len(); // 🔥 NEU
 
-    // Emission & Economics direkt aus State holen
-    let emission = state.inner.emission.clone();
-    let economics = state.inner.economics.clone();
+    let mut proofs_recent = proofs.clone();
+    proofs_recent.sort_by_key(|p| std::cmp::Reverse(p.timestamp_unix));
+    proofs_recent.truncate(100); // max 10 Zeilen PoC
 
-    Json(StateResponse {
-        nodes,
-        proofs,
+    Json(DashboardState {
         emission,
         economics,
+        active_nodes,
+        proofs_recent,
+        proofs_total_count, // 🔥 NEU
     })
 }
 
@@ -248,48 +229,51 @@ async fn get_state(State(state): State<AppState>) -> Json<StateResponse> {
 
 #[tokio::main]
 async fn main() {
-    // Einfaches statisches Emissionsmodell für dein Testnet
+    // Dummy-Startwerte – später dynamisch
     let emission = EmissionState {
-        total_supply_kct: 9_000_000_000.0,
-        mined_supply_kct: 100_000.0,
-        remaining_supply_kct: 9_000_000_000.0 - 100_000.0,
+        total_supply_kct: 10_000_000_000,
+        mined_supply_kct: 123_456_789,
+        remaining_supply_kct: 10_000_000_000 - 123_456_789,
         emission_month: 1,
         monthly_decay_pct: 1.0,
         current_block_reward_kct: 200.0,
     };
 
-    // Einfaches Economics-Modell
-    let economics = EconomicsState {
-        kct_price_usd: 0.01,
-        circulating_supply_kct: 100_000.0,
-        treasury_balance_kct: 1_000_000_000.0,
-        market_cap_usd: 0.01 * 100_000.0,
-        investor_value_usd: 0.01 * 100_000.0 * 0.5,
-        treasury_value_usd: 0.01 * 1_000_000_000.0,
+    let economics = EconomicState {
+        kct_price_usd: 0.05,
+        circulating_supply_kct: 150_000_000,
+        market_cap_usd: 0.05 * 150_000_000.0,
+        investor_value_usd: 0.05 * 150_000_000.0,
+        treasury_balance_kct: 1_000_000_000,
+        treasury_value_usd: 0.05 * 1_000_000_000.0,
     };
 
-    let inner = InnerState {
+    let state = Arc::new(AppState {
+        emission: Mutex::new(emission),
+        economics: Mutex::new(economics),
         nodes: Mutex::new(HashMap::new()),
         proofs: Mutex::new(Vec::new()),
-        emission,
-        economics,
-    };
+    });
 
-    let state = AppState {
-        inner: Arc::new(inner),
-    };
+    // statische Files aus /public, mit Fallback auf index.html
+    let static_files = ServeDir::new("public")
+        .not_found_service(ServeFile::new("public/index.html"));
 
-    // Static Files (Dashboard)
-    let public_dir = ServeDir::new("public").not_found_service(ServeFile::new("public/index.html"));
-
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/api/state", get(get_state))
-        .route("/api/node/heartbeat", post(heartbeat))
-        .route("/api/node/proof", post(submit_proof))
-        .nest_service("/dashboard", public_dir)
+    // API unter /api, Dashboard unter / und /dashboard
+    let api_router = Router::new()
+        .route("/node/heartbeat", post(post_heartbeat))
+        .route("/node/proof", post(post_proof))
+        .route("/nodes/active", get(get_active_nodes))
+        .route("/proofs/recent", get(get_recent_proofs))
+        .route("/state", get(get_dashboard_state))
         .with_state(state);
 
+    let app = Router::new()
+        .nest("/api", api_router)
+        .nest_service("/dashboard", static_files.clone())
+        .nest_service("/", static_files);
+
+    // PORT von Render
     let port: u16 = env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
