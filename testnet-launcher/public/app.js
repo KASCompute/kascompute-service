@@ -40,8 +40,9 @@ function formatNumber(n) {
 }
 
 function applyLanguage(lang) {
-  // placeholder – aktuell keine echte Übersetzung.
-  // Wichtig ist nur, dass der Call nicht crasht.
+  // Placeholder – aktuell keine echte Übersetzung,
+  // wichtig ist nur, dass der Aufruf nicht crasht.
+  console.debug("applyLanguage:", lang);
 }
 
 function markUserActive() {
@@ -240,16 +241,12 @@ function attachRewardUI() {
   }
 
   function computeRewardSummary() {
-    if (!emissionState) {
-      if (summaryBox)
-        summaryBox.textContent =
-          "Emission state not loaded from backend yet.";
-      return;
-    }
-
+    // Fallback auf Default, wenn Backend-Emission noch nicht geladen ist
     const m = parseInt(monthSlider ? monthSlider.value : "12", 10) || 12;
-    const r0 = emissionState.current_block_reward_kct || 200.0;
-    const decay = (emissionState.monthly_decay_pct || 1.0) / 100.0;
+    const r0 =
+      (emissionState && emissionState.current_block_reward_kct) || 200.0;
+    const decay =
+      ((emissionState && emissionState.monthly_decay_pct) || 1.0) / 100.0;
     const factor = 1.0 - decay;
     const rewardThisMonth = r0 * Math.pow(factor, m - 1);
 
@@ -346,7 +343,9 @@ function attachInvestorUI() {
   }
   if (discountSlider && discountLabel) {
     discountSlider.addEventListener("input", () => {
-      discountLabel.textContent = parseFloat(discountSlider.value).toFixed(2);
+      discountLabel.textContent = parseFloat(
+        discountSlider.value
+      ).toFixed(2);
       markUserActive();
     });
   }
@@ -654,9 +653,17 @@ function updateActiveNodesCard(nodes) {
   arr.forEach((n) => {
     const li = document.createElement("li");
     li.className = "node-item";
-    const ts = n.last_seen ?? n.timestamp_unix ?? 0;
+
+    const ts =
+      n.last_seen ??
+      n.last_seen_unix ??
+      n.timestamp_unix ??
+      n.timestamp ??
+      0;
     const lastSeen = ts ? new Date(ts * 1000).toLocaleString() : "-";
-    const profile = n.hardware || n.compute_profile || "-";
+
+    const profile = n.hardware || n.compute_profile || n.profile || "-";
+
     li.innerHTML = `
       <div class="node-id">${n.node_id}</div>
       <div class="node-meta">${profile} • last seen ${lastSeen}</div>
@@ -753,12 +760,22 @@ function updateNodeLeaderboard(proofs, nodes) {
 // ================= API / Header Badges =================
 
 function applyEmissionAndEconomics(data) {
-  emissionState = data.emission || null;
-  const econ = data.economics || null;
-  baseEconomics = econ;
+  emissionState = data.emission || emissionState;
+  const econ = data.economics || data.econ || null;
+  if (econ) baseEconomics = econ;
 
-  const nodesCount = (data.nodes || []).length;
-  const proofsCount = (data.proofs || []).length;
+  const nodesCount =
+    (data.nodes ||
+      data.active_nodes ||
+      data.node_states ||
+      data.node_list ||
+      []).length;
+  const proofsCount =
+    (data.proofs ||
+      data.proofs_recent ||
+      data.recent_proofs ||
+      data.proof_list ||
+      []).length;
 
   setText("stat-nodes", `Nodes: ${nodesCount}`);
   setText("stat-proofs", `Proofs: ${proofsCount}`);
@@ -783,8 +800,20 @@ async function refreshDashboard() {
     }
 
     applyEmissionAndEconomics(data);
-    const nodes = data.nodes || [];
-    const proofs = data.proofs || [];
+
+    const nodes =
+      data.nodes ||
+      data.active_nodes ||
+      data.node_states ||
+      data.node_list ||
+      [];
+    const proofs =
+      data.proofs ||
+      data.proofs_recent ||
+      data.recent_proofs ||
+      data.proof_list ||
+      [];
+
     updateActiveNodesCard(nodes);
     updateProofsFeed(proofs);
     updateNodeLeaderboard(proofs, nodes);
