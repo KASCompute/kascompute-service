@@ -1033,16 +1033,23 @@ async function refreshDashboard() {
 
     const data = await res.json();
 
-    window.__lastNodes = data.nodes || [];
-    window.__lastProofs = data.proofs || [];
+const nodes =
+  data.active_nodes ||
+  data.nodes ||
+  [];
 
-    updateActiveNodesCard(window.__lastNodes);
-    updateProofsFeed(window.__lastProofs);
+const proofs =
+  data.proofs_recent ||
+  data.proofs ||
+  [];
 
-    updateNodeLeaderboard(
-      window.__lastProofs || [],
-      window.__lastNodes || []
-    );
+window.__lastNodes = nodes;
+window.__lastProofs = proofs;
+
+updateActiveNodesCard(nodes);
+updateProofsFeed(proofs);
+updateNodeLeaderboard(proofs, nodes);
+
   } catch (e) {
     console.error("refreshDashboard error", e);
   }
