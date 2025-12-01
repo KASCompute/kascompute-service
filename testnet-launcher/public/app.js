@@ -4,6 +4,19 @@
 
 const API_BASE = "/api";
 
+// ===== Auto-Refresh Control =====
+let userActive = false;
+let userActiveTimeout = null;
+
+function markUserActive() {
+  userActive = true;
+  clearTimeout(userActiveTimeout);
+  userActiveTimeout = setTimeout(() => {
+    userActive = false;
+  }, 10000); // 10 Sekunden Pause nach User-Input
+}
+
+
 // ---------- i18n (EN / DE) ----------
 
 const translations = {
@@ -395,7 +408,9 @@ function attachRewardUI() {
   const summaryBox = document.getElementById("reward-summary");
   const jsonBox = document.getElementById("reward-json");
 
+  // ⭐ PATCH 1 → Month Slider Label Fix
   if (monthSlider && monthLabel) {
+    monthLabel.textContent = monthSlider.value; // Initial state
     monthSlider.addEventListener("input", () => {
       monthLabel.textContent = monthSlider.value;
     });
@@ -468,6 +483,7 @@ function attachRewardUI() {
     });
   }
 }
+
 
 // ================= Investor Value Flow =================
 
@@ -621,6 +637,7 @@ function attachInvestorUI() {
     if (canvas && window.Chart) {
       const ctx = canvas.getContext("2d");
       const labels = cashflows.map((_, i) => `Year ${i + 1}`);
+
       const data = {
         labels,
         datasets: [
@@ -629,14 +646,30 @@ function attachInvestorUI() {
             data: cashflows,
             tension: 0.35,
             fill: false,
+            borderWidth: 2,
+            pointRadius: 0,
+            borderColor: "rgba(0, 227, 192, 0.9)",
           },
         ],
       };
+
       const options = {
-        plugins: { legend: { display: true } },
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: "top" },
+        },
         scales: {
-          x: { display: true, grid: { display: false } },
-          y: { display: true, beginAtZero: true },
+          x: {
+            display: true,
+            grid: { display: false },
+            ticks: { maxTicksLimit: 8 },
+          },
+          y: {
+            display: true,
+            beginAtZero: true,
+            grid: { color: "rgba(255,255,255,0.06)" },
+          },
         },
       };
 
@@ -652,7 +685,7 @@ function attachInvestorUI() {
         investorChartInstance.update();
       }
     }
-  }
+
 
   if (btnSim) {
     btnSim.addEventListener("click", (e) => {
@@ -769,31 +802,51 @@ function attachTreasuryUI() {
       `Cliff: ${cliffMonths} months\n` +
       `Monthly release after cliff: ${monthlyRelease.toFixed(2)} KCT`;
 
-    const canvas = document.getElementById("treasuryChart");
+        const canvas = document.getElementById("treasuryChart");
     if (canvas && window.Chart) {
       const ctx = canvas.getContext("2d");
+
       const data = {
         labels: months.map((m) => `M${m}`),
         datasets: [
           {
             label: "Monthly release (KCT)",
             data: released,
-            tension: 0.25,
+            tension: 0.35,
             fill: false,
+            borderWidth: 2,
+            pointRadius: 0,
+            borderColor: "rgba(0, 227, 192, 0.9)",
           },
           {
             label: "Cumulative vested (KCT)",
             data: cumulative,
-            tension: 0.25,
+            tension: 0.35,
             fill: false,
+            borderWidth: 2,
+            pointRadius: 0,
+            borderColor: "rgba(155, 196, 255, 0.9)",
           },
         ],
       };
+
       const options = {
-        plugins: { legend: { display: true } },
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: "top" },
+        },
         scales: {
-          x: { display: false },
-          y: { display: true, beginAtZero: true },
+          x: {
+            display: true,
+            grid: { display: false },
+            ticks: { maxTicksLimit: 10 },
+          },
+          y: {
+            display: true,
+            beginAtZero: true,
+            grid: { color: "rgba(255,255,255,0.06)" },
+          },
         },
       };
 
@@ -810,15 +863,6 @@ function attachTreasuryUI() {
       }
     }
 
-    if (btnCopy) {
-      btnCopy.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(summaryBox.textContent || "");
-        } catch (e) {
-          console.error(e);
-        }
-      });
-    }
   }
 
   if (btnSim) {
@@ -876,7 +920,11 @@ function updateProofsFeed(proofs) {
     return;
   }
 
-  proofs.slice(0, 100).forEach((p) => {
+  // ⭐ PATCH 3: PoC Limit Dropdown
+const pocLimit = parseInt(document.getElementById("poc-limit")?.value || "100");
+
+proofs.slice(0, pocLimit).forEach((p) => {
+
     const unix = p.timestamp_unix ?? p.timestamp ?? 0;
     const dateStr = unix ? new Date(unix * 1000).toLocaleString() : "-";
     const wu = p.work_units ?? 0;
@@ -930,7 +978,11 @@ function updateNodeLeaderboard(proofs, activeNodes) {
 
   const rows = Array.from(stats.values()).sort((a, b) => b.rewards - a.rewards);
 
-  rows.slice(0, 10).forEach((s, idx) => {
+  // ⭐ PATCH 4: Leaderboard-Limit über Slider
+  const lbLimitEl = document.getElementById("lb-limit");
+  const limit = lbLimitEl ? parseInt(lbLimitEl.value, 10) || 10 : 10;
+
+  rows.slice(0, limit).forEach((s, idx) => {
     const tr = document.createElement("tr");
     const profile = profileMap.get(s.nodeId) || "-";
     const workReward =
@@ -945,6 +997,7 @@ function updateNodeLeaderboard(proofs, activeNodes) {
     tbody.appendChild(tr);
   });
 }
+
 
 // ================= API / Header Badges =================
 
@@ -983,8 +1036,14 @@ async function refreshDashboard() {
 
     applyEmissionAndEconomics(data);
     updateActiveNodesCard(data.active_nodes || []);
-    updateProofsFeed(data.proofs_recent || []);
-    updateNodeLeaderboard(data.proofs_recent || [], data.active_nodes || []);
+
+    // ⭐ PATCH 3 + 4: letzte Proofs/Nodes global speichern
+    window.__lastProofs = data.proofs_recent || [];
+    window.__lastNodes = data.active_nodes || [];
+
+    updateProofsFeed(window.__lastProofs);
+    updateNodeLeaderboard(window.__lastProofs, window.__lastNodes);
+
   } catch (err) {
     console.error("Failed to refresh dashboard:", err);
     const apiEl = document.getElementById("api-status");
@@ -1071,10 +1130,47 @@ function attachGlobalListeners() {
   const priceSlider = document.getElementById("kct-price-slider");
   const invSlider = document.getElementById("investor-multiplier-slider");
   const treSlider = document.getElementById("treasury-multiplier-slider");
-  if (priceSlider) priceSlider.addEventListener("input", recomputeFromSliders);
-  if (invSlider) invSlider.addEventListener("input", recomputeFromSliders);
-  if (treSlider) treSlider.addEventListener("input", recomputeFromSliders);
+  if (priceSlider) priceSlider.addEventListener("input", () => {
+  markUserActive();
+  recomputeFromSliders();
+});
+if (invSlider) invSlider.addEventListener("input", () => {
+  markUserActive();
+  recomputeFromSliders();
+});
+if (treSlider) treSlider.addEventListener("input", () => {
+  markUserActive();
+  recomputeFromSliders();
+});
+
+// ⭐ PATCH 3: PoC Limit Listener
+const pocLimit = document.getElementById("poc-limit");
+if (pocLimit) {
+  pocLimit.addEventListener("change", () => {
+    markUserActive();
+    updateProofsFeed(window.__lastProofs || []);
+  });
 }
+
+// ⭐ PATCH 4: Leaderboard-Limit-Slider
+const lbLimit = document.getElementById("lb-limit");
+const lbLimitLabel = document.getElementById("lb-limit-label");
+if (lbLimit) {
+  // Initiales Label setzen
+  if (lbLimitLabel) {
+    lbLimitLabel.textContent = lbLimit.value;
+  }
+
+  lbLimit.addEventListener("input", () => {
+    markUserActive();
+    if (lbLimitLabel) {
+      lbLimitLabel.textContent = lbLimit.value;
+    }
+    // Neu rendern mit den letzten gespeicherten Daten
+    updateNodeLeaderboard(window.__lastProofs || [], window.__lastNodes || []);
+  });
+}
+
 
 // ================= Init =================
 
@@ -1085,5 +1181,7 @@ document.addEventListener("DOMContentLoaded", () => {
   attachTreasuryUI();
   attachGlobalListeners();
   refreshDashboard();
-  setInterval(refreshDashboard, 8000);
-});
+  setInterval(() => {
+  if (!userActive) refreshDashboard();
+}, 8000);
+
