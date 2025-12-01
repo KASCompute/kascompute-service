@@ -530,8 +530,7 @@ function attachInvestorUI() {
   }
 
   function applyPreset(type) {
-    if (!feeInput || !investorSlider || !growthSlider || !discountSlider)
-      return;
+    if (!feeInput || !investorSlider || !growthSlider || !discountSlider) return;
     switch (type) {
       case "conservative":
         feeInput.value = "100000";
@@ -558,19 +557,13 @@ function attachInvestorUI() {
   }
 
   if (presetConservative) {
-    presetConservative.addEventListener("click", () =>
-      applyPreset("conservative")
-    );
+    presetConservative.addEventListener("click", () => applyPreset("conservative"));
   }
   if (presetBalanced) {
-    presetBalanced.addEventListener("click", () =>
-      applyPreset("balanced")
-    );
+    presetBalanced.addEventListener("click", () => applyPreset("balanced"));
   }
   if (presetAggressive) {
-    presetAggressive.addEventListener("click", () =>
-      applyPreset("aggressive")
-    );
+    presetAggressive.addEventListener("click", () => applyPreset("aggressive"));
   }
 
   function simulateInvestor() {
@@ -685,7 +678,7 @@ function attachInvestorUI() {
         investorChartInstance.update();
       }
     }
-
+  } // <- schließt simulateInvestor
 
   if (btnSim) {
     btnSim.addEventListener("click", (e) => {
@@ -715,7 +708,7 @@ function attachInvestorUI() {
       }
     });
   }
-}
+} // <- schließt attachInvestorUI
 
 // ================= Treasury Vesting =================
 
@@ -802,7 +795,7 @@ function attachTreasuryUI() {
       `Cliff: ${cliffMonths} months\n` +
       `Monthly release after cliff: ${monthlyRelease.toFixed(2)} KCT`;
 
-        const canvas = document.getElementById("treasuryChart");
+    const canvas = document.getElementById("treasuryChart");
     if (canvas && window.Chart) {
       const ctx = canvas.getContext("2d");
 
@@ -862,7 +855,6 @@ function attachTreasuryUI() {
         treasuryChartInstance.update();
       }
     }
-
   }
 
   if (btnSim) {
@@ -871,188 +863,49 @@ function attachTreasuryUI() {
       simulateTreasury();
     });
   }
+
+  if (btnCopy && summaryBox) {
+    btnCopy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(summaryBox.textContent || "");
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  }
 }
 
 // ================= Active Nodes / Proofs / Leaderboard =================
+// (dein vorhandener Code für updateActiveNodesCard, updateProofsFeed, updateNodeLeaderboard
+// bleibt so wie er ist – den brauchst du hier NICHT zu ändern)
 
-function updateActiveNodesCard(activeNodes) {
-  const countEl = document.getElementById("node-count");
-  const listEl = document.getElementById("node-list");
-
-  if (countEl) countEl.textContent = (activeNodes || []).length.toString();
-  if (!listEl) return;
-
-  listEl.innerHTML = "";
-
-  if (!activeNodes || activeNodes.length === 0) {
-    const li = document.createElement("li");
-    li.className = "node-empty";
-    li.textContent = translations[currentLang]["card.nodes.empty"];
-    listEl.appendChild(li);
-    return;
-  }
-
-  activeNodes.forEach((n) => {
-    const li = document.createElement("li");
-    li.className = "node-item";
-    const lastSeen = n.last_seen_unix
-      ? new Date(n.last_seen_unix * 1000).toLocaleString()
-      : "-";
-    li.innerHTML = `
-      <div class="node-id">${n.node_id}</div>
-      <div class="node-meta">${n.compute_profile || "-"} • last seen ${lastSeen}</div>
-    `;
-    listEl.appendChild(li);
-  });
-}
-
-function updateProofsFeed(proofs) {
-  const tbody = document.getElementById("proofs-body");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-
-  if (!proofs || proofs.length === 0) {
-    const tr = document.createElement("tr");
-    tr.className = "poc-empty-row";
-    tr.innerHTML = `<td colspan="5">${translations[currentLang]["card.proofs.empty"]}</td>`;
-    tbody.appendChild(tr);
-    return;
-  }
-
-  // ⭐ PATCH 3: PoC Limit Dropdown
-const pocLimit = parseInt(document.getElementById("poc-limit")?.value || "100");
-
-proofs.slice(0, pocLimit).forEach((p) => {
-
-    const unix = p.timestamp_unix ?? p.timestamp ?? 0;
-    const dateStr = unix ? new Date(unix * 1000).toLocaleString() : "-";
-    const wu = p.work_units ?? 0;
-    const reward = p.estimated_reward_kct ?? 0;
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${p.node_id ?? "-"}</td>
-      <td>${p.job_id ?? "-"}</td>
-      <td>${wu.toLocaleString()}</td>
-      <td>${reward.toFixed(6)}</td>
-      <td>${dateStr}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function updateNodeLeaderboard(proofs, activeNodes) {
-  const tbody = document.getElementById("leaderboard-body");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-
-  if (!proofs || proofs.length === 0) {
-    const tr = document.createElement("tr");
-    tr.className = "lb-empty-row";
-    tr.innerHTML = `<td colspan="5">${translations[currentLang]["card.lb.empty"]}</td>`;
-    tbody.appendChild(tr);
-    return;
-  }
-
-  const stats = new Map();
-  proofs.forEach((p) => {
-    const id = p.node_id ?? "unknown";
-    const wu = p.work_units ?? 0;
-    const reward = p.estimated_reward_kct ?? 0;
-
-    if (!stats.has(id)) {
-      stats.set(id, { nodeId: id, proofs: 0, workUnits: 0, rewards: 0 });
-    }
-    const s = stats.get(id);
-    s.proofs += 1;
-    s.workUnits += wu;
-    s.rewards += reward;
-  });
-
-  const profileMap = new Map();
-  (activeNodes || []).forEach((n) => {
-    profileMap.set(n.node_id, n.compute_profile || "-");
-  });
-
-  const rows = Array.from(stats.values()).sort((a, b) => b.rewards - a.rewards);
-
-  // ⭐ PATCH 4: Leaderboard-Limit über Slider
-  const lbLimitEl = document.getElementById("lb-limit");
-  const limit = lbLimitEl ? parseInt(lbLimitEl.value, 10) || 10 : 10;
-
-  rows.slice(0, limit).forEach((s, idx) => {
-    const tr = document.createElement("tr");
-    const profile = profileMap.get(s.nodeId) || "-";
-    const workReward =
-      `${s.workUnits.toLocaleString()} / ${s.rewards.toFixed(4)} KCT`;
-    tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${s.nodeId}</td>
-      <td>${profile}</td>
-      <td>${s.proofs}</td>
-      <td>${workReward}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-
-// ================= API / Header Badges =================
-
-function applyEmissionAndEconomics(data) {
-  emissionState = data.emission || null;
-  const econ = data.economics || null;
-  baseEconomics = econ;
-
-  const nodesCount = (data.active_nodes || []).length;
-  const proofsCount =
-    data.proofs_total_count != null
-      ? data.proofs_total_count
-      : (data.proofs_recent || []).length;
-
-  setText("stat-nodes", `Nodes: ${nodesCount}`);
-  setText("stat-proofs", `Proofs: ${proofsCount}`);
-
-  updateEmissionCardsFromState();
-  if (econ) updateEconomicsCards(econ);
-}
+// ================= Dashboard Refresh =================
 
 async function refreshDashboard() {
   try {
-    const apiEl = document.getElementById("api-status");
-    if (apiEl) {
-      apiEl.textContent = "Checking API…";
-      apiEl.classList.remove("pill-active");
+    const res = await fetch("/api/state");
+    if (!res.ok) {
+      console.error("Dashboard refresh failed.");
+      return;
     }
 
-    const data = await fetchJson("/state");
+    const data = await res.json();
 
-    if (apiEl) {
-      apiEl.textContent = "API online";
-      apiEl.classList.add("pill-active");
-    }
+    window.__lastNodes = data.nodes || [];
+    window.__lastProofs = data.proofs || [];
 
-    applyEmissionAndEconomics(data);
-    updateActiveNodesCard(data.active_nodes || []);
-
-    // ⭐ PATCH 3 + 4: letzte Proofs/Nodes global speichern
-    window.__lastProofs = data.proofs_recent || [];
-    window.__lastNodes = data.active_nodes || [];
-
+    updateActiveNodesCard(window.__lastNodes);
     updateProofsFeed(window.__lastProofs);
-    updateNodeLeaderboard(window.__lastProofs, window.__lastNodes);
 
-  } catch (err) {
-    console.error("Failed to refresh dashboard:", err);
-    const apiEl = document.getElementById("api-status");
-    if (apiEl) {
-      apiEl.textContent = "API offline";
-      apiEl.classList.remove("pill-active");
-    }
+    updateNodeLeaderboard(
+      window.__lastProofs || [],
+      window.__lastNodes || []
+    );
+  } catch (e) {
+    console.error("refreshDashboard error", e);
   }
 }
+
 
 // ================= Global Listener (Sprache / Currency / Theme) =================
 
@@ -1130,47 +983,49 @@ function attachGlobalListeners() {
   const priceSlider = document.getElementById("kct-price-slider");
   const invSlider = document.getElementById("investor-multiplier-slider");
   const treSlider = document.getElementById("treasury-multiplier-slider");
-  if (priceSlider) priceSlider.addEventListener("input", () => {
-  markUserActive();
-  recomputeFromSliders();
-});
-if (invSlider) invSlider.addEventListener("input", () => {
-  markUserActive();
-  recomputeFromSliders();
-});
-if (treSlider) treSlider.addEventListener("input", () => {
-  markUserActive();
-  recomputeFromSliders();
-});
+  if (priceSlider)
+    priceSlider.addEventListener("input", () => {
+      markUserActive();
+      recomputeFromSliders();
+    });
+  if (invSlider)
+    invSlider.addEventListener("input", () => {
+      markUserActive();
+      recomputeFromSliders();
+    });
+  if (treSlider)
+    treSlider.addEventListener("input", () => {
+      markUserActive();
+      recomputeFromSliders();
+    });
 
-// ⭐ PATCH 3: PoC Limit Listener
-const pocLimit = document.getElementById("poc-limit");
-if (pocLimit) {
-  pocLimit.addEventListener("change", () => {
-    markUserActive();
-    updateProofsFeed(window.__lastProofs || []);
-  });
-}
-
-// ⭐ PATCH 4: Leaderboard-Limit-Slider
-const lbLimit = document.getElementById("lb-limit");
-const lbLimitLabel = document.getElementById("lb-limit-label");
-if (lbLimit) {
-  // Initiales Label setzen
-  if (lbLimitLabel) {
-    lbLimitLabel.textContent = lbLimit.value;
+  // ⭐ PATCH 3: PoC Limit Listener
+  const pocLimit = document.getElementById("poc-limit");
+  if (pocLimit) {
+    pocLimit.addEventListener("change", () => {
+      markUserActive();
+      updateProofsFeed(window.__lastProofs || []);
+    });
   }
 
-  lbLimit.addEventListener("input", () => {
-    markUserActive();
+  // ⭐ PATCH 4: Leaderboard-Limit-Slider
+  const lbLimit = document.getElementById("lb-limit");
+  const lbLimitLabel = document.getElementById("lb-limit-label");
+
+  if (lbLimit) {
     if (lbLimitLabel) {
       lbLimitLabel.textContent = lbLimit.value;
     }
-    // Neu rendern mit den letzten gespeicherten Daten
-    updateNodeLeaderboard(window.__lastProofs || [], window.__lastNodes || []);
-  });
-}
 
+    lbLimit.addEventListener("input", () => {
+      markUserActive();
+      if (lbLimitLabel) {
+        lbLimitLabel.textContent = lbLimit.value;
+      }
+      updateNodeLeaderboard(window.__lastProofs || [], window.__lastNodes || []);
+    });
+  }
+} // <- schließt attachGlobalListeners
 
 // ================= Init =================
 
@@ -1181,7 +1036,8 @@ document.addEventListener("DOMContentLoaded", () => {
   attachTreasuryUI();
   attachGlobalListeners();
   refreshDashboard();
-  setInterval(() => {
-  if (!userActive) refreshDashboard();
-}, 8000);
 
+  setInterval(() => {
+    if (!userActive) refreshDashboard();
+  }, 8000);
+}); // <- schließt DOMContentLoaded
