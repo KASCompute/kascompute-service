@@ -205,6 +205,76 @@ body {
   color: var(--text-muted);
 }
 
+.card-footnote {
+  position: relative;
+  z-index: 1;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* KPI GRID */
+
+.kpi-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.kpi-grid-compact {
+  margin-top: 8px;
+}
+
+.kpi {
+  padding: 10px 10px 9px;
+  border-radius: 12px;
+  background: radial-gradient(circle at top left, rgba(0, 227, 192, 0.08), transparent 60%);
+  border: 1px solid rgba(0, 227, 192, 0.15);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
+}
+
+.kpi.small {
+  padding: 8px 9px 7px;
+}
+
+.kpi-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.kpi-value {
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.kpi-sub {
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(181, 199, 247, 0.8);
+}
+
+/* DUAL RANGE GRID (Market card sliders) */
+
+.dual-range-grid {
+  position: relative;
+  z-index: 1;
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 900px) {
+  .dual-range-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 /* FIELDS */
 
 .field {
@@ -444,6 +514,30 @@ canvas {
 }
 
 /* Active Nodes panel */
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  margin-bottom: 10px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
 .node-list {
   list-style: none;
   margin: 0;
@@ -481,6 +575,7 @@ canvas {
 }
 
 /* Proof-of-Compute table */
+
 .poc-table {
   width: 100%;
   border-collapse: collapse;
@@ -510,35 +605,27 @@ canvas {
   text-align: center;
 }
 
-/* --- Unified Button Style (Primary Buttons) --- */
-.btn-primary {
+/* HEAD-STATS im Header */
+
+#top-stats {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stat-badge {
   background: linear-gradient(135deg, #00e3c0, #00a4ff);
-  color: #ffffff;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 0.9rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: #041018;
   font-weight: 600;
-  cursor: pointer;
-  transition: background 0.25s ease, transform 0.2s ease;
+  font-size: 11px;
+  box-shadow: 0 12px 22px rgba(0, 227, 192, 0.35);
 }
 
-.btn-primary:hover {
-  background: linear-gradient(135deg, #00ffd5, #1db4ff);
-  transform: translateY(-2px);
-}
+/* Unified Button Style (Refresh etc.) */
 
-.btn-primary:active {
-  transform: scale(0.96);
-}
-
-/* Smaller version for utilities (e.g., refresh) */
-.small-btn {
-  padding: 6px 10px;
-  font-size: 0.8rem;
-}
-
-/* Refresh-Button im Active-Nodes-Panel – wie action-btn, nur kleiner */
 .pill-btn {
   position: relative;
   z-index: 1;
@@ -564,25 +651,8 @@ canvas {
   box-shadow: 0 12px 24px rgba(0, 227, 192, 0.38);
 }
 
-/* Header-Stats (Nodes / Proofs oben) */
-#top-stats {
-  margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.stat-badge {
-  background: linear-gradient(135deg, #00e3c0, #00a4ff);
-  padding: 4px 12px;
-  border-radius: 999px;
-  color: #041018;
-  font-weight: 600;
-  font-size: 11px;
-  box-shadow: 0 12px 22px rgba(0, 227, 192, 0.35);
-}
-
 /* Node Leaderboard */
+
 .leaderboard-table {
   width: 100%;
   border-collapse: collapse;
