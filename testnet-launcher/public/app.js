@@ -474,47 +474,79 @@ function attachInvestorUI() {
 
       if (!investorChartInstance) {
         investorChartInstance = new Chart(ctx, {
-          type: "line",
-          data,
-          options,
-        });
-      } else {
-        investorChartInstance.data = data;
-        investorChartInstance.options = options;
-        investorChartInstance.update();
+  type: "line",
+  data,
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: "index"
+    },
+    plugins: {
+      legend: {
+        display: false
+      },
+      tooltip: {
+        backgroundColor: "rgba(0,0,0,0.75)",
+        titleColor: "#00e3c0",
+        bodyColor: "#eaf4ff",
+        borderColor: "rgba(0,227,192,0.4)",
+        borderWidth: 1,
+        callbacks: {
+          label: (ctx) => `${formatNumber(ctx.parsed.y)} KCT/year`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false
+        },
+        ticks: {
+          color: "rgba(180,200,255,0.7)",
+          font: { size: 11 }
+        }
+      },
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: "rgba(120,150,220,0.15)",
+          lineWidth: 1
+        },
+        ticks: {
+          color: "rgba(200,220,255,0.85)",
+          font: { size: 11 },
+          callback: (value) => formatNumber(value)
+        }
+      }
+    },
+    animations: {
+      tension: {
+        duration: 900,
+        easing: "easeInOutQuart",
+        from: 0.2,
+        to: 0.6,
+        loop: false
+      }
+    },
+    elements: {
+      line: {
+        borderWidth: 2.6,
+        borderColor: "#00e3c0",
+        backgroundColor: gradient,
+        tension: 0.33
+      },
+      point: {
+        radius: 0,
+        hoverRadius: 5,
+        hoverBackgroundColor: "#00e3c0",
+        hoverBorderColor: "#00e3c0"
       }
     }
   }
+});
 
-  if (btnSim) {
-    btnSim.addEventListener("click", (e) => {
-      e.preventDefault();
-      simulateInvestor();
-    });
-  }
-
-  if (btnCopy && summaryBox) {
-    btnCopy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(summaryBox.textContent || "");
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-
-  if (btnJson && jsonBox) {
-    btnJson.addEventListener("click", () => {
-      if (jsonBox.style.display === "none") {
-        jsonBox.style.display = "block";
-        btnJson.textContent = "Hide raw JSON";
-      } else {
-        jsonBox.style.display = "none";
-        btnJson.textContent = "Show raw JSON";
-      }
-    });
-  }
-}
 
 // ================= Treasury Vesting =================
 
@@ -631,35 +663,83 @@ function attachTreasuryUI() {
 
       if (!treasuryChartInstance) {
         treasuryChartInstance = new Chart(ctx, {
-          type: "line",
-          data,
-          options,
-        });
-      } else {
-        treasuryChartInstance.data = data;
-        treasuryChartInstance.options = options;
-        treasuryChartInstance.update();
+  type: "line",
+  data,
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: "index"
+    },
+    plugins: {
+      legend: {
+        display: true,
+        position: "bottom",
+        labels: {
+          color: "rgba(215,230,255,0.95)",
+          usePointStyle: true,
+          pointStyle: "circle",
+          boxWidth: 8,
+          boxHeight: 8
+        }
+      },
+      tooltip: {
+        backgroundColor: "rgba(0,0,0,0.8)",
+        titleColor: "#00e3c0",
+        bodyColor: "#eaf4ff",
+        borderColor: "rgba(0,227,192,0.4)",
+        borderWidth: 1,
+        callbacks: {
+          label: (ctx) =>
+            `${ctx.dataset.label}: ${formatNumber(ctx.parsed.y)} KCT`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false
+        },
+        ticks: {
+          display: false
+        }
+      },
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: "rgba(120,150,220,0.15)"
+        },
+        ticks: {
+          color: "rgba(200,220,255,0.85)",
+          font: { size: 11 },
+          callback: (value) => formatNumber(value)
+        }
+      }
+    },
+    animations: {
+      tension: {
+        duration: 1000,
+        easing: "easeInOutQuart",
+        from: 0.2,
+        to: 0.5,
+        loop: false
+      }
+    },
+    elements: {
+      line: {
+        borderWidth: 2.4,
+        tension: 0.25
+      },
+      point: {
+        radius: 0,
+        hoverRadius: 5,
+        hoverBackgroundColor: "#fff"
       }
     }
-
-    if (btnCopy) {
-      btnCopy.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(summaryBox.textContent || "");
-        } catch (e) {
-          console.error(e);
-        }
-      });
-    }
   }
+});
 
-  if (btnSim) {
-    btnSim.addEventListener("click", (e) => {
-      e.preventDefault();
-      simulateTreasury();
-    });
-  }
-}
 
 // ================= Active Nodes / Proofs / Leaderboard =================
 
