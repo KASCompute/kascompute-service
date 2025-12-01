@@ -4,6 +4,22 @@
 
 const API_BASE = "/api";
 
+// ---------- Global State ----------
+
+let emissionState = null;
+let baseEconomics = null;
+let currentCurrency = "USD";
+
+let econLastPriceUsd = null;
+let econLastMarketCapUsd = null;
+let econLastInvestorUsd = null;
+let econLastTreasuryUsd = null;
+
+let investorChartInstance = null;
+let treasuryChartInstance = null;
+
+let userActive = false;
+
 // ---------- Helper ----------
 
 async function fetchJson(path) {
@@ -23,28 +39,19 @@ function formatNumber(n) {
   return n.toLocaleString();
 }
 
-function formatUsd(n) {
-  if (n === null || n === undefined || isNaN(n)) return "-";
-  return (
-    "$" +
-    n.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
+function applyLanguage(lang) {
+  // placeholder – aktuell keine echte Übersetzung.
+  // Wichtig ist nur, dass der Call nicht crasht.
+}
+
+function markUserActive() {
+  userActive = true;
+  setTimeout(() => {
+    userActive = false;
+  }, 15_000);
 }
 
 // ================= Emission / Economics =================
-
-let emissionState = null;
-let baseEconomics = null;
-
-// Currency-State
-let currentCurrency = "USD";
-let econLastPriceUsd = null;
-let econLastMarketCapUsd = null;
-let econLastInvestorUsd = null;
-let econLastTreasuryUsd = null;
 
 function renderEconomicsOutputs() {
   if (!baseEconomics) return;
@@ -67,13 +74,10 @@ function renderEconomicsOutputs() {
   }
 
   if (currentCurrency === "KCT") {
-    // alles in Token anzeigen
     const price = 1.0;
     const capTokens = baseEconomics.circulating_supply_kct ?? 0;
     const investorTokens =
-      econLastPriceUsd > 0
-        ? econLastInvestorUsd / econLastPriceUsd
-        : 0;
+      econLastPriceUsd > 0 ? econLastInvestorUsd / econLastPriceUsd : 0;
     const treasuryTokens = baseEconomics.treasury_balance_kct ?? 0;
 
     setText("kct-price", price.toFixed(4) + " KCT");
@@ -88,10 +92,7 @@ function renderEconomicsOutputs() {
   const inv = econLastInvestorUsd * fx;
   const tre = econLastTreasuryUsd * fx;
 
-  setText(
-    "kct-price",
-    symbol + price.toFixed(4)
-  );
+  setText("kct-price", symbol + price.toFixed(4));
   setText(
     "market-cap",
     symbol +
@@ -122,7 +123,10 @@ function updateEmissionCardsFromState() {
   if (!emissionState) return;
   setText("total-supply", formatNumber(emissionState.total_supply_kct));
   setText("mined-supply", formatNumber(emissionState.mined_supply_kct));
-  setText("remaining-supply", formatNumber(emissionState.remaining_supply_kct));
+  setText(
+    "remaining-supply",
+    formatNumber(emissionState.remaining_supply_kct)
+  );
   setText("emission-month", emissionState.emission_month ?? "-");
   setText(
     "block-reward",
@@ -168,6 +172,7 @@ function updateEconomicsCards(ec) {
 
 function recomputeFromSliders() {
   if (!baseEconomics) return;
+  markUserActive();
 
   const priceSlider = document.getElementById("kct-price-slider");
   const priceLabel = document.getElementById("kct-price-slider-value");
@@ -230,6 +235,7 @@ function attachRewardUI() {
   if (monthSlider && monthLabel) {
     monthSlider.addEventListener("input", () => {
       monthLabel.textContent = monthSlider.value;
+      markUserActive();
     });
   }
 
@@ -274,6 +280,7 @@ function attachRewardUI() {
   if (btnReward && summaryBox) {
     btnReward.addEventListener("click", (e) => {
       e.preventDefault();
+      markUserActive();
       computeRewardSummary();
     });
   }
@@ -303,8 +310,6 @@ function attachRewardUI() {
 
 // ================= Investor Value Flow =================
 
-let investorChartInstance = null;
-
 function attachInvestorUI() {
   const feeInput = document.getElementById("fee");
   const investorSlider = document.getElementById("investor");
@@ -320,199 +325,165 @@ function attachInvestorUI() {
   const btnCopy = document.getElementById("btn-investor-copy");
   const btnJson = document.getElementById("btn-investor-json");
   const jsonBox = document.getElementById("investor-json");
-  const presetConservative = document.getElementById("inv-preset-conservative");
-  const presetBalanced = document.getElementById("inv-preset-balanced");
-  const presetAggressive = document.getElementById("inv-preset-aggressive");
 
   if (investorSlider && investorLabel) {
     investorSlider.addEventListener("input", () => {
       investorLabel.textContent = parseFloat(investorSlider.value).toFixed(2);
+      markUserActive();
     });
   }
   if (yearsSlider && yearsLabel) {
     yearsSlider.addEventListener("input", () => {
       yearsLabel.textContent = yearsSlider.value;
+      markUserActive();
     });
   }
   if (growthSlider && growthLabel) {
     growthSlider.addEventListener("input", () => {
       growthLabel.textContent = parseFloat(growthSlider.value).toFixed(2);
+      markUserActive();
     });
   }
   if (discountSlider && discountLabel) {
     discountSlider.addEventListener("input", () => {
       discountLabel.textContent = parseFloat(discountSlider.value).toFixed(2);
+      markUserActive();
     });
   }
 
-  function applyPreset(type) {
-    if (!feeInput || !investorSlider || !growthSlider || !discountSlider)
-      return;
-    switch (type) {
-      case "conservative":
-        feeInput.value = "100000";
-        investorSlider.value = "0.3";
-        growthSlider.value = "0.05";
-        discountSlider.value = "0.12";
-        break;
-      case "balanced":
-        feeInput.value = "200000";
-        investorSlider.value = "0.5";
-        growthSlider.value = "0.1";
-        discountSlider.value = "0.15";
-        break;
-      case "aggressive":
-        feeInput.value = "500000";
-        investorSlider.value = "0.7";
-        growthSlider.value = "0.2";
-        discountSlider.value = "0.2";
-        break;
-    }
-    investorSlider.dispatchEvent(new Event("input"));
-    growthSlider.dispatchEvent(new Event("input"));
-    discountSlider.dispatchEvent(new Event("input"));
-  }
-
-  if (presetConservative) {
-    presetConservative.addEventListener("click", () =>
-      applyPreset("conservative")
-    );
-  }
-  if (presetBalanced) {
-    presetBalanced.addEventListener("click", () =>
-      applyPreset("balanced")
-    );
-  }
-  if (presetAggressive) {
-    presetAggressive.addEventListener("click", () =>
-      applyPreset("aggressive")
-    );
-  }
-
   function simulateInvestor() {
-  const feeYear = parseFloat(feeInput.value || "0");
-  const investorShare = parseFloat(investorSlider.value || "0");
-  const years = parseInt(yearsSlider.value || "0", 10);
-  const growth = parseFloat(growthSlider.value || "0");
-  const discount = parseFloat(discountSlider.value || "0");
+    const feeYear = parseFloat(feeInput?.value || "0");
+    const investorShare = parseFloat(investorSlider?.value || "0");
+    const years = parseInt(yearsSlider?.value || "0", 10);
+    const growth = parseFloat(growthSlider?.value || "0");
+    const discount = parseFloat(discountSlider?.value || "0");
 
-  if (!feeYear || !years || investorShare <= 0) {
-    summaryBox.textContent = "Set fee, investor share and years.";
-    jsonBox.textContent = "";
-    if (investorChartInstance) {
-      investorChartInstance.destroy();
-      investorChartInstance = null;
+    if (!feeYear || !years || investorShare <= 0) {
+      if (summaryBox)
+        summaryBox.textContent = "Set fee, investor share and years.";
+      if (jsonBox) jsonBox.textContent = "";
+      if (investorChartInstance) {
+        investorChartInstance.destroy();
+        investorChartInstance = null;
+      }
+      return;
     }
-    return;
+
+    const cashflows = [];
+    let npv = 0;
+    const k0 = feeYear * investorShare;
+
+    for (let t = 1; t <= years; t++) {
+      const cf = k0 * Math.pow(1 + growth, t - 1);
+      cashflows.push(cf);
+      npv += cf / Math.pow(1 + discount, t);
+    }
+
+    const totalCash = cashflows.reduce((a, b) => a + b, 0);
+
+    if (summaryBox) {
+      summaryBox.textContent =
+        `Total cashflow (undiscounted): ${totalCash.toFixed(2)} KCT\n` +
+        `NPV (discounted): ${npv.toFixed(2)} KCT\n` +
+        `Years: ${years}, Share: ${(investorShare * 100).toFixed(
+          1
+        )} %, ` +
+        `Growth: ${(growth * 100).toFixed(
+          1
+        )} %, Discount: ${(discount * 100).toFixed(1)} %`;
+    }
+
+    if (jsonBox) {
+      jsonBox.textContent = JSON.stringify(
+        {
+          yearly_fee_total: feeYear,
+          investor_share: investorShare,
+          years,
+          growth,
+          discount,
+          cashflows,
+          total_cash_undiscounted: totalCash,
+          npv_discounted: npv,
+        },
+        null,
+        2
+      );
+    }
+
+    const canvas = document.getElementById("investorChart");
+    if (!canvas || !window.Chart) return;
+
+    const ctx = canvas.getContext("2d");
+    const labels = cashflows.map((_, i) => `Year ${i + 1}`);
+
+    const data = {
+      labels,
+      datasets: [
+        {
+          label: "Investor cashflow (KCT/year)",
+          data: cashflows,
+          borderColor: "#00e3c0",
+          borderWidth: 2,
+          tension: 0.35,
+          pointRadius: 0,
+          fill: false,
+        },
+      ],
+    };
+
+    const options = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: "rgba(120,150,220,0.12)" },
+        },
+      },
+    };
+
+    if (investorChartInstance) investorChartInstance.destroy();
+    investorChartInstance = new Chart(ctx, { type: "line", data, options });
   }
 
-  // Logik wie vorher
-  const cashflows = [];
-  let npv = 0;
-  const k0 = feeYear * investorShare;
-
-  for (let t = 1; t <= years; t++) {
-    const cf = k0 * Math.pow(1 + growth, t - 1);
-    cashflows.push(cf);
-    npv += cf / Math.pow(1 + discount, t);
+  if (btnSim) {
+    btnSim.addEventListener("click", (e) => {
+      e.preventDefault();
+      markUserActive();
+      simulateInvestor();
+    });
   }
 
-  const totalCash = cashflows.reduce((a, b) => a + b, 0);
+  if (btnCopy && summaryBox) {
+    btnCopy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(summaryBox.textContent || "");
+      } catch (e) {
+        console.error("Clipboard error:", e);
+      }
+    });
+  }
 
-  summaryBox.textContent =
-    `Total cashflow (undiscounted): ${totalCash.toFixed(2)} KCT\n` +
-    `NPV (discounted): ${npv.toFixed(2)} KCT\n` +
-    `Years: ${years}, Share: ${(investorShare * 100).toFixed(1)} %, ` +
-    `Growth: ${(growth * 100).toFixed(1)} %, Discount: ${(discount * 100).toFixed(1)} %`;
-
-  jsonBox.textContent = JSON.stringify(
-    {
-      yearly_fee_total: feeYear,
-      investor_share: investorShare,
-      years,
-      growth,
-      discount,
-      cashflows,
-      total_cash_undiscounted: totalCash,
-      npv_discounted: npv,
-    },
-    null,
-    2
-  );
-
-  const canvas = document.getElementById("investorChart");
-  if (!canvas || !window.Chart) return;
-
-  const ctx = canvas.getContext("2d");
-  const labels = cashflows.map((_, i) => `Year ${i + 1}`);
-
-  // Premium Gradient Fill
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
-  gradient.addColorStop(0, "rgba(0, 227, 192, 0.55)");
-  gradient.addColorStop(1, "rgba(0, 227, 192, 0.03)");
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: "Investor cashflow (KCT/year)",
-        data: cashflows,
-        borderColor: "#00e3c0",
-        backgroundColor: gradient,
-        borderWidth: 2.4,
-        tension: 0.35,
-        pointRadius: 0,
-        fill: true,
-      },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: "rgba(0,0,0,0.75)",
-        titleColor: "#00e3c0",
-        bodyColor: "#eaf4ff",
-        borderColor: "rgba(0,227,192,0.4)",
-        borderWidth: 1,
-        callbacks: {
-          label: (ctx) =>
-            `${Number(ctx.parsed.y).toLocaleString()} KCT / year`,
-        },
-      },
-    },
-    scales: {
-      x: {
-        grid: { display: false },
-        ticks: {
-          color: "rgba(180,200,255,0.8)",
-          font: { size: 11 },
-        },
-      },
-      y: {
-        beginAtZero: true,
-        grid: { color: "rgba(120,150,220,0.12)" },
-        ticks: {
-          color: "rgba(200,220,255,0.85)",
-          font: { size: 11 },
-          callback: (v) => Number(v).toLocaleString(),
-        },
-      },
-    },
-  };
-
-  if (investorChartInstance) investorChartInstance.destroy();
-  investorChartInstance = new Chart(ctx, { type: "line", data, options });
+  if (btnJson && jsonBox) {
+    btnJson.addEventListener("click", () => {
+      if (jsonBox.style.display === "none") {
+        jsonBox.style.display = "block";
+        btnJson.textContent = "Hide raw JSON";
+      } else {
+        jsonBox.style.display = "none";
+        btnJson.textContent = "Show raw JSON";
+      }
+    });
+  }
 }
 
-
-
 // ================= Treasury Vesting =================
-
-let treasuryChartInstance = null;
 
 function attachTreasuryUI() {
   const totalInput = document.getElementById("treasury-total");
@@ -528,11 +499,13 @@ function attachTreasuryUI() {
   if (yearsSlider && yearsLabel) {
     yearsSlider.addEventListener("input", () => {
       yearsLabel.textContent = yearsSlider.value;
+      markUserActive();
     });
   }
   if (cliffSlider && cliffLabel) {
     cliffSlider.addEventListener("input", () => {
       cliffLabel.textContent = cliffSlider.value;
+      markUserActive();
     });
   }
 
@@ -543,143 +516,134 @@ function attachTreasuryUI() {
       yearsSlider.dispatchEvent(new Event("input"));
       cliffSlider.value = "0";
       cliffSlider.dispatchEvent(new Event("input"));
+      markUserActive();
     });
   }
 
   function simulateTreasury() {
-  const total = parseFloat(totalInput.value || "0");
-  const years = parseInt(yearsSlider.value || "0", 10);
-  const cliffMonths = parseInt(cliffSlider.value || "0", 10);
+    const total = parseFloat(totalInput?.value || "0");
+    const years = parseInt(yearsSlider?.value || "0", 10);
+    const cliffMonths = parseInt(cliffSlider?.value || "0", 10);
 
-  if (!total || !years) {
-    summaryBox.textContent = "Set total treasury and vesting duration.";
-    return;
-  }
-
-  const monthsTotal = years * 12;
-  const monthsVesting = Math.max(0, monthsTotal - cliffMonths);
-  const monthlyRelease = monthsVesting > 0 ? total / monthsVesting : 0;
-
-  const months = [];
-  const released = [];
-  const cumulative = [];
-
-  let cum = 0;
-  for (let m = 1; m <= monthsTotal; m++) {
-    months.push(m);
-    let rel = 0;
-    if (m > cliffMonths && monthsVesting > 0) {
-      rel = monthlyRelease;
-      cum = Math.min(total, cum + rel);
-      if (cum === total) rel = Math.max(0, rel - (cum - total));
+    if (!total || !years) {
+      if (summaryBox)
+        summaryBox.textContent = "Set total treasury and vesting duration.";
+      return;
     }
-    released.push(rel);
-    cumulative.push(cum);
+
+    const monthsTotal = years * 12;
+    const monthsVesting = Math.max(0, monthsTotal - cliffMonths);
+    const monthlyRelease = monthsVesting > 0 ? total / monthsVesting : 0;
+
+    const months = [];
+    const released = [];
+    const cumulative = [];
+
+    let cum = 0;
+    for (let m = 1; m <= monthsTotal; m++) {
+      months.push(m);
+      let rel = 0;
+      if (m > cliffMonths && monthsVesting > 0) {
+        rel = monthlyRelease;
+        cum = Math.min(total, cum + rel);
+        if (cum === total) {
+          rel = Math.max(0, rel - (cum - total));
+        }
+      }
+      released.push(rel);
+      cumulative.push(cum);
+    }
+
+    if (summaryBox) {
+      summaryBox.textContent =
+        `Total Treasury: ${total.toLocaleString()} KCT\n` +
+        `Duration: ${years} years (${monthsTotal} months)\n` +
+        `Cliff: ${cliffMonths} months\n` +
+        `Monthly release after cliff: ${monthlyRelease.toFixed(2)} KCT`;
+    }
+
+    const canvas = document.getElementById("treasuryChart");
+    if (!canvas || !window.Chart) return;
+
+    const ctx = canvas.getContext("2d");
+
+    const data = {
+      labels: months.map((m) => `M${m}`),
+      datasets: [
+        {
+          label: "Monthly release (KCT)",
+          data: released,
+          borderColor: "#00e3c0",
+          borderWidth: 2,
+          tension: 0.28,
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: "Cumulative vested (KCT)",
+          data: cumulative,
+          borderColor: "#f43f5e",
+          borderWidth: 2,
+          tension: 0.18,
+          pointRadius: 0,
+          fill: false,
+        },
+      ],
+    };
+
+    const options = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: "bottom" },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: "rgba(120,150,220,0.12)" },
+        },
+      },
+    };
+
+    if (treasuryChartInstance) treasuryChartInstance.destroy();
+    treasuryChartInstance = new Chart(ctx, { type: "line", data, options });
   }
 
-  summaryBox.textContent =
-    `Total Treasury: ${total.toLocaleString()} KCT\n` +
-    `Duration: ${years} years (${monthsTotal} months)\n` +
-    `Cliff: ${cliffMonths} months\n` +
-    `Monthly release after cliff: ${monthlyRelease.toFixed(2)} KCT`;
+  if (btnSim) {
+    btnSim.addEventListener("click", (e) => {
+      e.preventDefault();
+      markUserActive();
+      simulateTreasury();
+    });
+  }
 
-  const canvas = document.getElementById("treasuryChart");
-  if (!canvas || !window.Chart) return;
-
-  const ctx = canvas.getContext("2d");
-
-  const gradMonthly = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
-  gradMonthly.addColorStop(0, "rgba(0, 227, 192, 0.55)");
-  gradMonthly.addColorStop(1, "rgba(0, 227, 192, 0.05)");
-
-  const gradCum = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
-  gradCum.addColorStop(0, "rgba(244, 63, 94, 0.75)");
-  gradCum.addColorStop(1, "rgba(244, 63, 94, 0.15)");
-
-  const data = {
-    labels: months.map((m) => `M${m}`),
-    datasets: [
-      {
-        label: "Monthly release (KCT)",
-        data: released,
-        borderColor: "#00e3c0",
-        backgroundColor: gradMonthly,
-        borderWidth: 2.4,
-        tension: 0.28,
-        pointRadius: 0,
-        fill: true,
-      },
-      {
-        label: "Cumulative vested (KCT)",
-        data: cumulative,
-        borderColor: "#f43f5e",
-        backgroundColor: gradCum,
-        borderWidth: 2.4,
-        tension: 0.18,
-        pointRadius: 0,
-        fill: false,
-      },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: true,
-        position: "bottom",
-        labels: {
-          color: "rgba(225,240,255,0.9)",
-          usePointStyle: true,
-          pointStyle: "circle",
-          boxWidth: 10,
-        },
-      },
-      tooltip: {
-        backgroundColor: "rgba(0,0,0,0.8)",
-        titleColor: "#00e3c0",
-        bodyColor: "#eaf4ff",
-        borderColor: "rgba(0,227,192,0.4)",
-        borderWidth: 1,
-        callbacks: {
-          label: (ctx) =>
-            `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} KCT`,
-        },
-      },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { display: false } },
-      y: {
-        beginAtZero: true,
-        grid: { color: "rgba(120,150,220,0.12)" },
-        ticks: {
-          color: "rgba(200,220,255,0.85)",
-          font: { size: 11 },
-          callback: (v) => Number(v).toLocaleString(),
-        },
-      },
-    },
-  };
-
-  if (treasuryChartInstance) treasuryChartInstance.destroy();
-  treasuryChartInstance = new Chart(ctx, { type: "line", data, options });
+  if (btnCopy && summaryBox) {
+    btnCopy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(summaryBox.textContent || "");
+      } catch (e) {
+        console.error("Clipboard error:", e);
+      }
+    });
+  }
 }
-
-
 
 // ================= Active Nodes / Proofs / Leaderboard =================
 
-function updateActiveNodesCard(activeNodes) {
+function updateActiveNodesCard(nodes) {
   const countEl = document.getElementById("node-count");
   const listEl = document.getElementById("node-list");
 
-  if (countEl) countEl.textContent = (activeNodes || []).length.toString();
+  const arr = nodes || [];
+  if (countEl) countEl.textContent = arr.length.toString();
   if (!listEl) return;
 
   listEl.innerHTML = "";
 
-  if (!activeNodes || activeNodes.length === 0) {
+  if (arr.length === 0) {
     const li = document.createElement("li");
     li.className = "node-empty";
     li.textContent = "Waiting for heartbeats…";
@@ -687,15 +651,15 @@ function updateActiveNodesCard(activeNodes) {
     return;
   }
 
-  activeNodes.forEach((n) => {
+  arr.forEach((n) => {
     const li = document.createElement("li");
     li.className = "node-item";
-    const lastSeen = n.last_seen_unix
-      ? new Date(n.last_seen_unix * 1000).toLocaleString()
-      : "-";
+    const ts = n.last_seen ?? n.timestamp_unix ?? 0;
+    const lastSeen = ts ? new Date(ts * 1000).toLocaleString() : "-";
+    const profile = n.hardware || n.compute_profile || "-";
     li.innerHTML = `
       <div class="node-id">${n.node_id}</div>
-      <div class="node-meta">${n.compute_profile || "-"} • last seen ${lastSeen}</div>
+      <div class="node-meta">${profile} • last seen ${lastSeen}</div>
     `;
     listEl.appendChild(li);
   });
@@ -707,7 +671,8 @@ function updateProofsFeed(proofs) {
 
   tbody.innerHTML = "";
 
-  if (!proofs || proofs.length === 0) {
+  const arr = proofs || [];
+  if (arr.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "poc-empty-row";
     tr.innerHTML = `<td colspan="5">Waiting for proofs…</td>`;
@@ -715,7 +680,7 @@ function updateProofsFeed(proofs) {
     return;
   }
 
-  proofs.slice(0, 100).forEach((p) => {
+  arr.slice(0, 100).forEach((p) => {
     const unix = p.timestamp_unix ?? p.timestamp ?? 0;
     const dateStr = unix ? new Date(unix * 1000).toLocaleString() : "-";
     const wu = p.work_units ?? 0;
@@ -733,13 +698,14 @@ function updateProofsFeed(proofs) {
   });
 }
 
-function updateNodeLeaderboard(proofs, activeNodes) {
+function updateNodeLeaderboard(proofs, nodes) {
   const tbody = document.getElementById("leaderboard-body");
   if (!tbody) return;
 
   tbody.innerHTML = "";
 
-  if (!proofs || proofs.length === 0) {
+  const arr = proofs || [];
+  if (arr.length === 0) {
     const tr = document.createElement("tr");
     tr.className = "lb-empty-row";
     tr.innerHTML = `<td colspan="5">Waiting for node activity…</td>`;
@@ -748,11 +714,10 @@ function updateNodeLeaderboard(proofs, activeNodes) {
   }
 
   const stats = new Map();
-  proofs.forEach((p) => {
+  arr.forEach((p) => {
     const id = p.node_id ?? "unknown";
     const wu = p.work_units ?? 0;
     const reward = p.estimated_reward_kct ?? 0;
-
     if (!stats.has(id)) {
       stats.set(id, { nodeId: id, proofs: 0, workUnits: 0, rewards: 0 });
     }
@@ -763,8 +728,8 @@ function updateNodeLeaderboard(proofs, activeNodes) {
   });
 
   const profileMap = new Map();
-  (activeNodes || []).forEach((n) => {
-    profileMap.set(n.node_id, n.compute_profile || "-");
+  (nodes || []).forEach((n) => {
+    profileMap.set(n.node_id, n.hardware || n.compute_profile || "-");
   });
 
   const rows = Array.from(stats.values()).sort((a, b) => b.rewards - a.rewards);
@@ -792,11 +757,8 @@ function applyEmissionAndEconomics(data) {
   const econ = data.economics || null;
   baseEconomics = econ;
 
-  const nodesCount = (data.active_nodes || []).length;
-  const proofsCount =
-    data.proofs_total_count != null
-      ? data.proofs_total_count
-      : (data.proofs_recent || []).length;
+  const nodesCount = (data.nodes || []).length;
+  const proofsCount = (data.proofs || []).length;
 
   setText("stat-nodes", `Nodes: ${nodesCount}`);
   setText("stat-proofs", `Proofs: ${proofsCount}`);
@@ -821,9 +783,11 @@ async function refreshDashboard() {
     }
 
     applyEmissionAndEconomics(data);
-    updateActiveNodesCard(data.active_nodes || []);
-    updateProofsFeed(data.proofs_recent || []);
-    updateNodeLeaderboard(data.proofs_recent || [], data.active_nodes || []);
+    const nodes = data.nodes || [];
+    const proofs = data.proofs || [];
+    updateActiveNodesCard(nodes);
+    updateProofsFeed(proofs);
+    updateNodeLeaderboard(proofs, nodes);
   } catch (err) {
     console.error("Failed to refresh dashboard:", err);
     const apiEl = document.getElementById("api-status");
@@ -839,7 +803,10 @@ async function refreshDashboard() {
 function attachGlobalListeners() {
   const btnRefreshNodes = document.getElementById("btn-refresh-nodes");
   if (btnRefreshNodes) {
-    btnRefreshNodes.addEventListener("click", () => refreshDashboard());
+    btnRefreshNodes.addEventListener("click", () => {
+      markUserActive();
+      refreshDashboard();
+    });
   }
 
   function togglePillGroup(activeId, ids) {
@@ -854,12 +821,16 @@ function attachGlobalListeners() {
   const btnLangEn = document.getElementById("btn-lang-en");
   const btnLangDe = document.getElementById("btn-lang-de");
   if (btnLangEn && btnLangDe) {
-    btnLangEn.addEventListener("click", () =>
-      togglePillGroup("btn-lang-en", ["btn-lang-en", "btn-lang-de"])
-    );
-    btnLangDe.addEventListener("click", () =>
-      togglePillGroup("btn-lang-de", ["btn-lang-en", "btn-lang-de"])
-    );
+    btnLangEn.addEventListener("click", () => {
+      togglePillGroup("btn-lang-en", ["btn-lang-en", "btn-lang-de"]);
+      applyLanguage("en");
+      markUserActive();
+    });
+    btnLangDe.addEventListener("click", () => {
+      togglePillGroup("btn-lang-de", ["btn-lang-en", "btn-lang-de"]);
+      applyLanguage("de");
+      markUserActive();
+    });
   }
 
   const btnCurKct = document.getElementById("btn-cur-kct");
@@ -874,6 +845,7 @@ function attachGlobalListeners() {
         "btn-cur-usd",
       ]);
       renderEconomicsOutputs();
+      markUserActive();
     });
     btnCurEur.addEventListener("click", () => {
       currentCurrency = "EUR";
@@ -883,6 +855,7 @@ function attachGlobalListeners() {
         "btn-cur-usd",
       ]);
       renderEconomicsOutputs();
+      markUserActive();
     });
     btnCurUsd.addEventListener("click", () => {
       currentCurrency = "USD";
@@ -892,6 +865,7 @@ function attachGlobalListeners() {
         "btn-cur-usd",
       ]);
       renderEconomicsOutputs();
+      markUserActive();
     });
   }
 
@@ -902,18 +876,26 @@ function attachGlobalListeners() {
       const cur = html.getAttribute("data-theme") || "dark";
       const next = cur === "dark" ? "light" : "dark";
       html.setAttribute("data-theme", next);
+      markUserActive();
     });
   }
 
   const priceSlider = document.getElementById("kct-price-slider");
   const invSlider = document.getElementById("investor-multiplier-slider");
   const treSlider = document.getElementById("treasury-multiplier-slider");
-  if (priceSlider) priceSlider.addEventListener("input", recomputeFromSliders);
-  if (invSlider) invSlider.addEventListener("input", recomputeFromSliders);
-  if (treSlider) treSlider.addEventListener("input", recomputeFromSliders);
+  if (priceSlider)
+    priceSlider.addEventListener("input", () => {
+      recomputeFromSliders();
+    });
+  if (invSlider)
+    invSlider.addEventListener("input", () => {
+      recomputeFromSliders();
+    });
+  if (treSlider)
+    treSlider.addEventListener("input", () => {
+      recomputeFromSliders();
+    });
 }
-
-// ================= Init =================
 
 // ================= Init =================
 
@@ -921,7 +903,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const apiStatusInit = document.getElementById("api-status");
   if (apiStatusInit) {
     apiStatusInit.textContent = "Checking API…";
-    apiStatusInit.classList.add("status-loading");
   }
 
   applyLanguage("en"); // Default
