@@ -915,11 +915,25 @@ function attachGlobalListeners() {
 
 // ================= Init =================
 
+// ================= Init =================
+
 document.addEventListener("DOMContentLoaded", () => {
+  const apiStatusInit = document.getElementById("api-status");
+  if (apiStatusInit) {
+    apiStatusInit.textContent = "Checking API…";
+    apiStatusInit.classList.add("status-loading");
+  }
+
+  applyLanguage("en"); // Default
   attachRewardUI();
   attachInvestorUI();
   attachTreasuryUI();
   attachGlobalListeners();
   refreshDashboard();
-  setInterval(refreshDashboard, 8000);
+
+  setInterval(() => {
+    if (!userActive) {
+      refreshDashboard();
+    }
+  }, 8000);
 });
