@@ -45,7 +45,7 @@ while ($true) {
             node_id              = $NODE_ID
             job_id               = $jobId
             work_units           = $wu
-            estimated_reward_kct = 0.0
+            estimated_reward_kct = 200
             proof_hash           = $hash
         }
 
