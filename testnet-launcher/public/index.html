@@ -100,6 +100,13 @@
           <div class="kpi-sub">% per month</div>
         </div>
       </div>
+
+      <!-- Export-Button für Kaspa DAO / Investoren -->
+      <div class="summary-actions" style="margin-top:12px;">
+        <button id="btn-download-state" class="json-btn secondary-btn">
+          Download latest state.json
+        </button>
+      </div>
     </section>
 
     <!-- KCT MARKET SIMULATION -->
@@ -297,6 +304,83 @@
       <pre id="investor-json" class="json-box" style="display:none;"></pre>
     </section>
 
+    <!-- NETWORK COMPUTE OVERVIEW -->
+    <section class="card card-animate">
+      <div class="card-header">
+        <h2>
+          <span class="card-icon">🧠</span>
+          Network Compute Overview
+        </h2>
+        <p class="card-subtitle">
+          CPU / GPU mix and total work done by all nodes in the testnet.
+        </p>
+      </div>
+
+      <div class="kpi-grid kpi-grid-compact">
+        <div class="kpi small">
+          <div class="kpi-label">Total Nodes</div>
+          <div id="net-nodes-total" class="kpi-value">–</div>
+          <div class="kpi-sub">CPU + GPU</div>
+        </div>
+        <div class="kpi small">
+          <div class="kpi-label">CPU Nodes</div>
+          <div id="net-nodes-cpu" class="kpi-value">–</div>
+          <div class="kpi-sub">Detected</div>
+        </div>
+        <div class="kpi small">
+          <div class="kpi-label">GPU Nodes</div>
+          <div id="net-nodes-gpu" class="kpi-value">–</div>
+          <div class="kpi-sub">Detected</div>
+        </div>
+        <div class="kpi small">
+          <div class="kpi-label">Total Proofs</div>
+          <div id="net-proofs-total" class="kpi-value">–</div>
+          <div class="kpi-sub">Submitted</div>
+        </div>
+        <div class="kpi small">
+          <div class="kpi-label">Total Work</div>
+          <div id="net-workunits-total" class="kpi-value">–</div>
+          <div class="kpi-sub">Work units</div>
+        </div>
+        <div class="kpi small">
+          <div class="kpi-label">Total Rewards</div>
+          <div id="net-reward-total" class="kpi-value">–</div>
+          <div class="kpi-sub">≈ KCT</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECENT JOBS (aus Proofs abgeleitet) -->
+    <section class="card card-animate">
+      <div class="card-header">
+        <h2>
+          <span class="card-icon">🧵</span>
+          Recent Jobs (from PoC)
+        </h2>
+        <p class="card-subtitle">
+          Groups proofs by job_id to show which workloads ran on the testnet.
+        </p>
+      </div>
+
+      <div class="poc-table-wrap">
+        <table class="poc-table">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>Nodes</th>
+              <th>Proofs</th>
+              <th>Work Units</th>
+            </tr>
+          </thead>
+          <tbody id="jobs-body">
+            <tr class="poc-empty-row">
+              <td colspan="4">Waiting for proofs…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- TREASURY VESTING -->
     <section class="card card-animate">
       <div class="card-header">
@@ -394,7 +478,6 @@
         </p>
       </div>
 
-      <!-- NEW: Slider für Anzahl Proofs -->
       <div class="field">
         <label>
           Show last
@@ -443,7 +526,6 @@
         </p>
       </div>
 
-      <!-- NEW: Slider für Top-N Nodes -->
       <div class="field">
         <label>
           Show Top
@@ -479,12 +561,28 @@
         </table>
       </div>
     </section>
+
+    <!-- NODE SPOTLIGHT -->
+    <section class="card card-animate sidebar-card">
+      <div class="card-header">
+        <h2>
+          <span class="card-icon">🔍</span>
+          Node Spotlight
+        </h2>
+        <p class="card-subtitle">
+          Top node by cumulative rewards across all proofs.
+        </p>
+      </div>
+
+      <pre id="node-spotlight-summary" class="summary-box">
+Waiting for node activity…
+      </pre>
+    </section>
   </aside>
 
 </main>
 
 <script>
-  // Environment-Switch (dev vs. Render)
   (function () {
     const host = window.location.hostname;
     if (host === "127.0.0.1" || host === "localhost") {

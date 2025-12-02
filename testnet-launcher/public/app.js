@@ -4,8 +4,6 @@
 
 const API_BASE = "/api";
 
-// ---------- Global State ----------
-
 let emissionState = null;
 let baseEconomics = null;
 let currentCurrency = "USD";
@@ -20,7 +18,7 @@ let treasuryChartInstance = null;
 
 let userActive = false;
 
-// ---------- Helper ----------
+// ---------- Helpers ----------
 
 async function fetchJson(path) {
   const res = await fetch(API_BASE + path);
@@ -40,8 +38,6 @@ function formatNumber(n) {
 }
 
 function applyLanguage(lang) {
-  // Placeholder – aktuell keine echte Übersetzung,
-  // wichtig ist nur, dass der Aufruf nicht crasht.
   console.debug("applyLanguage:", lang);
 }
 
@@ -50,6 +46,30 @@ function markUserActive() {
   setTimeout(() => {
     userActive = false;
   }, 15_000);
+}
+
+// ---- Hardware Profile Parsing (CPU/GPU only) ----
+
+function parseHardwareProfile(obj) {
+  const raw =
+    obj?.hardware ||
+    obj?.compute_profile ||
+    obj?.profile ||
+    obj?.compute ||
+    "";
+
+  const profile = typeof raw === "string" && raw.trim().length > 0 ? raw : "-";
+
+  let type = "other";
+  const s = profile.toLowerCase();
+
+  if (s.startsWith("gpu") || s.includes("rtx") || s.includes("geforce") || s.includes("radeon")) {
+    type = "gpu";
+  } else if (s.startsWith("cpu") || s.includes("ryzen") || s.match(/\bi[3579]-\d+/)) {
+    type = "cpu";
+  }
+
+  return { profile, type };
 }
 
 // ================= Emission / Economics =================
@@ -65,7 +85,7 @@ function renderEconomicsOutputs() {
     return;
   }
 
-  const fxEur = 0.92; // grober Kurs
+  const fxEur = 0.92;
   let symbol = "$";
   let fx = 1;
 
@@ -241,7 +261,6 @@ function attachRewardUI() {
   }
 
   function computeRewardSummary() {
-    // Fallback auf Default, wenn Backend-Emission noch nicht geladen ist
     const m = parseInt(monthSlider ? monthSlider.value : "12", 10) || 12;
     const r0 =
       (emissionState && emissionState.current_block_reward_kct) || 200.0;
@@ -350,7 +369,6 @@ function attachInvestorUI() {
     });
   }
 
-  // ===== Presets (Conservative / Balanced / Aggressive) =====
   const btnCons = document.getElementById("inv-preset-conservative");
   const btnBal = document.getElementById("inv-preset-balanced");
   const btnAgg = document.getElementById("inv-preset-aggressive");
@@ -470,9 +488,7 @@ function attachInvestorUI() {
         legend: { display: false },
       },
       scales: {
-        x: {
-          grid: { display: false },
-        },
+        x: { grid: { display: false } },
         y: {
           beginAtZero: true,
           grid: { color: "rgba(120,150,220,0.12)" },
@@ -543,12 +559,10 @@ function attachTreasuryUI() {
 
   if (btnPreset && totalInput && yearsSlider && cliffSlider) {
     btnPreset.addEventListener("click", () => {
-      // Werte laut deinem Whitepaper
-      totalInput.value = "1000000000";  // 1B KCT Treasury
-      yearsSlider.value = "14";         // linear 14 Jahre
-      cliffSlider.value = "0";          // kein Cliff
+      totalInput.value = "1000000000";
+      yearsSlider.value = "14";
+      cliffSlider.value = "0";
 
-      // Labels aktualisieren
       yearsLabel.textContent = "14";
       cliffLabel.textContent = "0";
 
@@ -634,9 +648,7 @@ function attachTreasuryUI() {
         legend: { display: true, position: "bottom" },
       },
       scales: {
-        x: {
-          grid: { display: false },
-        },
+        x: { grid: { display: false } },
         y: {
           beginAtZero: true,
           grid: { color: "rgba(120,150,220,0.12)" },
@@ -667,7 +679,7 @@ function attachTreasuryUI() {
   }
 }
 
-// ================= Active Nodes / Proofs / Leaderboard =================
+// ================= Active Nodes / Proofs / Leaderboard / Network KPIs =================
 
 function updateActiveNodesCard(nodes) {
   const countEl = document.getElementById("node-count");
@@ -699,11 +711,21 @@ function updateActiveNodesCard(nodes) {
       0;
     const lastSeen = ts ? new Date(ts * 1000).toLocaleString() : "-";
 
-    const profile = n.hardware || n.compute_profile || n.profile || "-";
+    const { profile, type } = parseHardwareProfile(n);
+    let pillHtml = "";
+    if (type === "gpu") {
+      pillHtml = `<span class="lb-gpu-pill">GPU</span>`;
+    } else if (type === "cpu") {
+      pillHtml = `<span class="lb-cpu-pill">CPU</span>`;
+    }
 
     li.innerHTML = `
       <div class="node-id">${n.node_id}</div>
-      <div class="node-meta">${profile} • last seen ${lastSeen}</div>
+      <div class="node-meta">
+        ${pillHtml}
+        <span>${profile}</span>
+        <span>• last seen ${lastSeen}</span>
+      </div>
     `;
     listEl.appendChild(li);
   });
@@ -724,7 +746,6 @@ function updateProofsFeed(proofs) {
     return;
   }
 
-  // Dynamischer Limit-Slider
   let limit = 50;
   const limitEl = document.getElementById("proof-limit");
   if (limitEl) {
@@ -770,23 +791,34 @@ function updateNodeLeaderboard(proofs, nodes) {
     const id = p.node_id ?? "unknown";
     const wu = p.work_units ?? 0;
     const reward = p.estimated_reward_kct ?? 0;
+    const ts = p.timestamp_unix ?? p.timestamp ?? 0;
     if (!stats.has(id)) {
-      stats.set(id, { nodeId: id, proofs: 0, workUnits: 0, rewards: 0 });
+      stats.set(id, {
+        nodeId: id,
+        proofs: 0,
+        workUnits: 0,
+        rewards: 0,
+        firstTs: ts || null,
+        lastTs: ts || null,
+      });
     }
     const s = stats.get(id);
     s.proofs += 1;
     s.workUnits += wu;
     s.rewards += reward;
+    if (ts) {
+      if (s.firstTs === null || ts < s.firstTs) s.firstTs = ts;
+      if (s.lastTs === null || ts > s.lastTs) s.lastTs = ts;
+    }
   });
 
   const profileMap = new Map();
   (nodes || []).forEach((n) => {
-    profileMap.set(n.node_id, n.hardware || n.compute_profile || "-");
+    profileMap.set(n.node_id, parseHardwareProfile(n));
   });
 
   const rows = Array.from(stats.values()).sort((a, b) => b.rewards - a.rewards);
 
-  // Dynamischer Limit-Slider
   let limit = 10;
   const limitEl = document.getElementById("lb-limit");
   if (limitEl) {
@@ -795,19 +827,169 @@ function updateNodeLeaderboard(proofs, nodes) {
   }
 
   rows.slice(0, limit).forEach((s, idx) => {
-    const tr = document.createElement("tr");
-    const profile = profileMap.get(s.nodeId) || "-";
+    const profData = profileMap.get(s.nodeId) || { profile: "-", type: "other" };
+
+    let pillHtml = "";
+    if (profData.type === "gpu") {
+      pillHtml = `<span class="lb-gpu-pill">GPU</span>`;
+    } else if (profData.type === "cpu") {
+      pillHtml = `<span class="lb-cpu-pill">CPU</span>`;
+    }
+
+    const profileHtml = `
+      <div class="lb-profile">
+        ${pillHtml}
+        <span>${profData.profile}</span>
+      </div>
+    `;
+
     const workReward =
       `${s.workUnits.toLocaleString()} / ${s.rewards.toFixed(4)} KCT`;
+
+    const tr = document.createElement("tr");
+    tr.className = "leaderboard-row";
     tr.innerHTML = `
-      <td>${idx + 1}</td>
-      <td>${s.nodeId}</td>
-      <td>${profile}</td>
-      <td>${s.proofs}</td>
-      <td>${workReward}</td>
+      <td class="lb-rank">${idx + 1}</td>
+      <td class="lb-node-id">${s.nodeId}</td>
+      <td>${profileHtml}</td>
+      <td class="lb-proofs">${s.proofs}</td>
+      <td class="lb-meta">${workReward}</td>
     `;
     tbody.appendChild(tr);
   });
+
+  // Node Spotlight nutzen dieselben Stats
+  updateNodeSpotlightFromStats(rows, profileMap);
+}
+
+function updateNetworkOverview(nodes, proofs) {
+  const nodeArr = nodes || [];
+  const proofArr = proofs || [];
+
+  let cpu = 0;
+  let gpu = 0;
+  nodeArr.forEach((n) => {
+    const { type } = parseHardwareProfile(n);
+    if (type === "cpu") cpu++;
+    else if (type === "gpu") gpu++;
+  });
+
+  let totalWork = 0;
+  let totalReward = 0;
+  proofArr.forEach((p) => {
+    totalWork += p.work_units ?? 0;
+    totalReward += p.estimated_reward_kct ?? 0;
+  });
+
+  setText("net-nodes-total", nodeArr.length.toString());
+  setText("net-nodes-cpu", cpu.toString());
+  setText("net-nodes-gpu", gpu.toString());
+  setText("net-proofs-total", formatNumber(proofArr.length));
+  setText("net-workunits-total", formatNumber(totalWork));
+  setText(
+    "net-reward-total",
+    totalReward.toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+    }) + " KCT"
+  );
+}
+
+// ===== Recent Jobs (aus Proofs) =====
+
+function updateJobsTable(proofs) {
+  const tbody = document.getElementById("jobs-body");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  const arr = proofs || [];
+  if (arr.length === 0) {
+    const tr = document.createElement("tr");
+    tr.className = "poc-empty-row";
+    tr.innerHTML = `<td colspan="4">Waiting for proofs…</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  const jobMap = new Map();
+  arr.forEach((p) => {
+    const jobId = p.job_id || "unknown";
+    const nodeId = p.node_id || "unknown";
+    const wu = p.work_units ?? 0;
+    const ts = p.timestamp_unix ?? p.timestamp ?? 0;
+
+    if (!jobMap.has(jobId)) {
+      jobMap.set(jobId, {
+        jobId,
+        nodes: new Set(),
+        proofs: 0,
+        workUnits: 0,
+        lastTs: ts || 0,
+      });
+    }
+    const j = jobMap.get(jobId);
+    j.nodes.add(nodeId);
+    j.proofs += 1;
+    j.workUnits += wu;
+    if (ts && ts > j.lastTs) j.lastTs = ts;
+  });
+
+  const rows = Array.from(jobMap.values()).sort((a, b) => b.lastTs - a.lastTs);
+
+  rows.slice(0, 50).forEach((j) => {
+    const shortId =
+      j.jobId.length > 10 ? j.jobId.slice(0, 10) + "…" : j.jobId;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${shortId}</td>
+      <td>${j.nodes.size}</td>
+      <td>${j.proofs}</td>
+      <td>${j.workUnits.toLocaleString()}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ===== Node Spotlight (Top Node) =====
+
+function updateNodeSpotlightFromStats(statsRows, profileMap) {
+  const box = document.getElementById("node-spotlight-summary");
+  if (!box) return;
+
+  if (!statsRows || statsRows.length === 0) {
+    box.textContent = "Waiting for node activity…";
+    return;
+  }
+
+  const top = statsRows[0];
+  const profData = profileMap.get(top.nodeId) || { profile: "-", type: "other" };
+
+  let typeLabel = "Other";
+  if (profData.type === "cpu") typeLabel = "CPU";
+  else if (profData.type === "gpu") typeLabel = "GPU";
+
+  let proofsPerMin = 0;
+  if (top.firstTs && top.lastTs && top.lastTs > top.firstTs) {
+    const minutes = (top.lastTs - top.firstTs) / 60;
+    proofsPerMin = top.proofs / minutes;
+  }
+
+  const firstStr = top.firstTs
+    ? new Date(top.firstTs * 1000).toLocaleString()
+    : "-";
+  const lastStr = top.lastTs
+    ? new Date(top.lastTs * 1000).toLocaleString()
+    : "-";
+
+  box.textContent =
+    `Node: ${top.nodeId}\n` +
+    `Profile: ${profData.profile} (${typeLabel})\n\n` +
+    `Total proofs: ${top.proofs.toLocaleString()}\n` +
+    `Total work units: ${top.workUnits.toLocaleString()}\n` +
+    `Total rewards: ${top.rewards.toFixed(4)} KCT\n` +
+    `Proofs per minute (approx): ${proofsPerMin.toFixed(2)}\n\n` +
+    `First proof: ${firstStr}\n` +
+    `Last proof:  ${lastStr}`;
 }
 
 // ================= API / Header Badges =================
@@ -870,6 +1052,8 @@ async function refreshDashboard() {
     updateActiveNodesCard(nodes);
     updateProofsFeed(proofs);
     updateNodeLeaderboard(proofs, nodes);
+    updateNetworkOverview(nodes, proofs);
+    updateJobsTable(proofs);
   } catch (err) {
     console.error("Failed to refresh dashboard:", err);
     const apiEl = document.getElementById("api-status");
@@ -880,7 +1064,27 @@ async function refreshDashboard() {
   }
 }
 
-// ================= Global Listener (Sprache / Currency / Theme) =================
+// ================= Global Listener (Language / Currency / Theme / Download) =================
+
+async function downloadStateJson() {
+  try {
+    markUserActive();
+    const data = await fetchJson("/state");
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "kascompute-state.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.error("downloadStateJson failed:", e);
+  }
+}
 
 function attachGlobalListeners() {
   const btnRefreshNodes = document.getElementById("btn-refresh-nodes");
@@ -891,7 +1095,6 @@ function attachGlobalListeners() {
     });
   }
 
-  // NEW: Proof-Limit Slider
   const proofLimit = document.getElementById("proof-limit");
   const proofLimitLabel = document.getElementById("proof-limit-label");
   if (proofLimit) {
@@ -903,7 +1106,6 @@ function attachGlobalListeners() {
     });
   }
 
-  // NEW: Leaderboard-Limit Slider
   const lbLimit = document.getElementById("lb-limit");
   const lbLimitLabel = document.getElementById("lb-limit-label");
   if (lbLimit) {
@@ -912,6 +1114,14 @@ function attachGlobalListeners() {
       markUserActive();
       if (lbLimitLabel) lbLimitLabel.textContent = lbLimit.value;
       refreshDashboard();
+    });
+  }
+
+  const btnDownloadState = document.getElementById("btn-download-state");
+  if (btnDownloadState) {
+    btnDownloadState.addEventListener("click", (e) => {
+      e.preventDefault();
+      downloadStateJson();
     });
   }
 
@@ -1011,7 +1221,7 @@ document.addEventListener("DOMContentLoaded", () => {
     apiStatusInit.textContent = "Checking API…";
   }
 
-  applyLanguage("en"); // Default
+  applyLanguage("en");
   attachRewardUI();
   attachInvestorUI();
   attachTreasuryUI();
