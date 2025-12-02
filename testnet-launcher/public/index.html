@@ -394,6 +394,23 @@
         </p>
       </div>
 
+      <!-- NEW: Slider für Anzahl Proofs -->
+      <div class="field">
+        <label>
+          Show last
+          <span id="proof-limit-label" class="field-badge">50</span>
+          proofs
+        </label>
+        <input
+          id="proof-limit"
+          type="range"
+          min="10"
+          max="200"
+          step="10"
+          value="50"
+        />
+      </div>
+
       <div class="poc-table-wrap">
         <table class="poc-table">
           <thead>
@@ -424,6 +441,23 @@
         <p class="card-subtitle">
           Ranked by submitted proofs and estimated KCT rewards.
         </p>
+      </div>
+
+      <!-- NEW: Slider für Top-N Nodes -->
+      <div class="field">
+        <label>
+          Show Top
+          <span id="lb-limit-label" class="field-badge">10</span>
+          nodes
+        </label>
+        <input
+          id="lb-limit"
+          type="range"
+          min="5"
+          max="50"
+          step="5"
+          value="10"
+        />
       </div>
 
       <div class="leaderboard-wrap">

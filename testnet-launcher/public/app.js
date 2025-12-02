@@ -351,9 +351,9 @@ function attachInvestorUI() {
   }
 
   // ===== Presets (Conservative / Balanced / Aggressive) =====
-  const btnCons = document.getElementById("btn-preset-cons");
-  const btnBal = document.getElementById("btn-preset-bal");
-  const btnAgg = document.getElementById("btn-preset-agg");
+  const btnCons = document.getElementById("inv-preset-conservative");
+  const btnBal = document.getElementById("inv-preset-balanced");
+  const btnAgg = document.getElementById("inv-preset-aggressive");
 
   function applyInvestorPreset(fee, share, years, growth, discount) {
     feeInput.value = fee.toString();
@@ -543,18 +543,17 @@ function attachTreasuryUI() {
 
   if (btnPreset && totalInput && yearsSlider && cliffSlider) {
     btnPreset.addEventListener("click", () => {
-  // Werte laut deinem Whitepaper
-  totalInput.value = "1000000000";  // 1B KCT Treasury
-  yearsSlider.value = "14";         // linear 14 Jahre
-  cliffSlider.value = "0";          // kein Cliff
+      // Werte laut deinem Whitepaper
+      totalInput.value = "1000000000";  // 1B KCT Treasury
+      yearsSlider.value = "14";         // linear 14 Jahre
+      cliffSlider.value = "0";          // kein Cliff
 
-  // Labels aktualisieren
-  yearsLabel.textContent = "14";
-  cliffLabel.textContent = "0";
+      // Labels aktualisieren
+      yearsLabel.textContent = "14";
+      cliffLabel.textContent = "0";
 
-  markUserActive();
-});
-
+      markUserActive();
+    });
   }
 
   function simulateTreasury() {
@@ -725,7 +724,15 @@ function updateProofsFeed(proofs) {
     return;
   }
 
-  arr.slice(0, 100).forEach((p) => {
+  // Dynamischer Limit-Slider
+  let limit = 50;
+  const limitEl = document.getElementById("proof-limit");
+  if (limitEl) {
+    const v = parseInt(limitEl.value, 10);
+    if (!isNaN(v)) limit = v;
+  }
+
+  arr.slice(0, limit).forEach((p) => {
     const unix = p.timestamp_unix ?? p.timestamp ?? 0;
     const dateStr = unix ? new Date(unix * 1000).toLocaleString() : "-";
     const wu = p.work_units ?? 0;
@@ -779,7 +786,15 @@ function updateNodeLeaderboard(proofs, nodes) {
 
   const rows = Array.from(stats.values()).sort((a, b) => b.rewards - a.rewards);
 
-  rows.slice(0, 10).forEach((s, idx) => {
+  // Dynamischer Limit-Slider
+  let limit = 10;
+  const limitEl = document.getElementById("lb-limit");
+  if (limitEl) {
+    const v = parseInt(limitEl.value, 10);
+    if (!isNaN(v)) limit = v;
+  }
+
+  rows.slice(0, limit).forEach((s, idx) => {
     const tr = document.createElement("tr");
     const profile = profileMap.get(s.nodeId) || "-";
     const workReward =
@@ -872,6 +887,30 @@ function attachGlobalListeners() {
   if (btnRefreshNodes) {
     btnRefreshNodes.addEventListener("click", () => {
       markUserActive();
+      refreshDashboard();
+    });
+  }
+
+  // NEW: Proof-Limit Slider
+  const proofLimit = document.getElementById("proof-limit");
+  const proofLimitLabel = document.getElementById("proof-limit-label");
+  if (proofLimit) {
+    if (proofLimitLabel) proofLimitLabel.textContent = proofLimit.value;
+    proofLimit.addEventListener("input", () => {
+      markUserActive();
+      if (proofLimitLabel) proofLimitLabel.textContent = proofLimit.value;
+      refreshDashboard();
+    });
+  }
+
+  // NEW: Leaderboard-Limit Slider
+  const lbLimit = document.getElementById("lb-limit");
+  const lbLimitLabel = document.getElementById("lb-limit-label");
+  if (lbLimit) {
+    if (lbLimitLabel) lbLimitLabel.textContent = lbLimit.value;
+    lbLimit.addEventListener("input", () => {
+      markUserActive();
+      if (lbLimitLabel) lbLimitLabel.textContent = lbLimit.value;
       refreshDashboard();
     });
   }
