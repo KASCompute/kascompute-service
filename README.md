@@ -53,18 +53,11 @@ It explores how a future decentralized compute marketplace on Kaspa could look:
 > 🚫 Not a fork.  
 > ✅ Fully custom-built prototype on top of Kaspa.
 
----
-
-## 🎥 Live Demo & Architecture
-
-### 🔴 Demo Video (Dashboard Walkthrough)
-
-> Add your exported video here (e.g. `assets/kascompute-demo.mp4` or GIF)
 
 ```md
-https://github.com/KASCompute/kascompute-service/assets/your-demo-here
 
-![KASCompute Demo](assets/kascompute-demo.gif)
+
+
 
  Kaspa Layer 1 (BlockDAG)
           │
@@ -82,7 +75,7 @@ Heartbeat  Jobs   PoC Validation
           ▼
  Frontend Dashboard (Real-Time UI)
 
-![KASCompute PoC Architecture](assets/kascompute-architecture.png)
+
 
 [ CPU/GPU Node ]
        │  heartbeat
@@ -138,6 +131,7 @@ Mining vs. treasury split
 Long-term emission behavior
 
 
+
 🖥 Live Testnet Dashboard
 
 URL:
@@ -165,6 +159,8 @@ Investor cashflow simulation
 
 Node leaderboard
 
+
+
 🔌 API Endpoints (Public Prototype)
 
 Note: endpoints and payloads may evolve as this prototype matures.
@@ -186,6 +182,8 @@ GET /emission/monthly
 Investor Value Flow (Post-Mining)
 GET /investor/value_flow?fee_annual=100000&investor_pct=0.1&years=10&growth=0.1&discount=0.05
 
+
+
 🏗 Project Structure
 
 kascompute-service/
@@ -200,6 +198,7 @@ kascompute-service/
 
 🔎 The live dashboard uses:
 testnet-launcher/public/index.html, app.js, style.css.
+
 
 
 🎨 Dashboard Styling (SCSS Example)
@@ -231,6 +230,8 @@ testnet-launcher/public/index.html, app.js, style.css.
   }
 }
 
+
+
 💻 Run Locally
 Prerequisites
 
@@ -245,6 +246,8 @@ cargo run
 Dashboard is available at:
 
 http://127.0.0.1:8080/dashboard/
+
+
 
 🚀 Deploy (Render)
 Build
@@ -281,6 +284,7 @@ Live dashboard (jobs, nodes, rewards)
 Architecture diagrams (PoC, DAG-style)
 
 
+
 🔜 Planned next
 
 Node reputation & scoring
@@ -295,11 +299,13 @@ Whitepaper v2 integration
 
 Extended PoC verification models
 
+
 ⚠️ Disclaimer
 
 This repository is for research & development.
 Nothing here is financial advice or an economic guarantee.
 Parameters, models and assumptions may change as the design evolves.
+
 
 📫 Contact
 
