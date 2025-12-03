@@ -292,7 +292,8 @@ async fn main() {
         .route("/api/state", get(get_state))
         .route("/api/node/heartbeat", post(heartbeat))
         .route("/api/node/proof", post(submit_proof))
-        .nest_service("/dashboard", public_dir)
+        .nest_service("/dashboard", public_dir.clone())
+        .nest_service("/", public_dir)
         .with_state(state);
 
     let port: u16 = env::var("PORT")

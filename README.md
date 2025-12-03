@@ -1,18 +1,8 @@
-<!--
-  NOTE:
-  - Replace the image paths in /assets with your real files:
-    - assets/kascompute-banner.png
-    - assets/kascompute-demo.gif or .mp4
-    - assets/kascompute-architecture.png or .gif
--->
 
 <p align="center">
-  <img src="assets/kascompute-banner.png" alt="KASCompute Banner" width="100%"/>
+  <img src="assets/kascompute-banner.png" alt="kascompute-banner-animated-v2" width="100%"/>
 </p>
 
-<p align="center">
-  <img src="assets/logo.png" width="140" alt="KASCompute Logo"/>
-</p>
 
 <h1 align="center">⚡ KASCompute — Compute Layer Prototype on Kaspa</h1>
 
