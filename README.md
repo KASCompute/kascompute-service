@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="assets/kascompute-banner.png" alt="kascompute-banner-animated-v2" width="100%"/>
+  <img src="assets/kascompute-banner-animated-v2.gif" width="100%" />
 </p>
 
 
