@@ -2,60 +2,165 @@
   <img src="assets/logo.png" width="200" alt="KASCompute Logo"/>
 </p>
 
-<h1 align="center">KASCompute — Decentralized Compute Layer Prototype on Kaspa</h1>
+<h1 align="center">⚡ KASCompute — Decentralized Compute Layer Prototype on Kaspa</h1>
 
 <p align="center">
-  <strong>Real-time nodes. Proof-of-Compute. Workload simulation. Full tokenomics engine.</strong><br>
-  <strong>100% open-source. Powered by the Kaspa BlockDAG.</strong>
+  <strong>Live Proof-of-Compute. Real-time nodes. Workload simulation. Full tokenomics engine.</strong><br>
+  <strong>Custom-built from scratch. Powered by Kaspa’s BlockDAG.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Rust-1.74+-brown" />
+  <img src="https://img.shields.io/badge/Rust-1.74%2B-brown" />
   <img src="https://img.shields.io/badge/Axum-0.7-blue" />
-  <img src="https://img.shields.io/badge/Kaspa-BlockDAG-green">
+  <img src="https://img.shields.io/badge/ComputeLayer-PoC-orange" />
+  <img src="https://img.shields.io/badge/Kaspa-BlockDAG-green" />
   <img src="https://img.shields.io/badge/License-MIT-yellow" />
 </p>
 
 ---
 
-# 🌐 Overview
+# 🧬 What is KASCompute?
 
-**KASCompute** is a conceptual decentralized compute layer built on top of the **Kaspa ecosystem**.
+**KASCompute** is a prototype for a *future decentralized compute layer*  
+built on top of the **Kaspa BlockDAG**.
 
-This prototype demonstrates:
+It demonstrates:
 
-- 🟢 Node heartbeat system  
-- 🔵 Proof-of-Compute (PoC) submission & validation  
-- 🟣 Job grouping (workloads grouped by `job_id`)  
-- 🟡 Reward estimation engine (KCT)  
-- 🔥 Global state engine (nodes, proofs, jobs, rewards, emission)  
-- 📡 Real-time compute dashboard (HTML / JS / CSS)  
-- 📈 Full KCT token emission model  
-- 💰 Investor value & treasury simulation  
+- Real-time node heartbeat system  
+- Proof-of-Compute (PoC) submissions  
+- Job grouping & workload simulation  
+- CPU/GPU hardware profiling  
+- Reward estimation engine (KCT)  
+- 14-year emission model (1% monthly decay)  
+- Global state engine (nodes • proofs • jobs • rewards)  
+- Fully interactive dashboard  
+- Investor & treasury simulation  
 
-Everything is custom-built from scratch — **not a fork**.
+> 🚫 **Not a fork.**  
+> 🔥 100% custom-built compute-layer concept.
 
 ---
 
-# 🧠 Architecture (High-Level)
+# 🏗 Core Architecture
 
 ```text
-           Kaspa Layer 1 (BlockDAG)
-                     │
-                     ▼
-        KASCompute Coordinator (API Engine)
-                     │
-      ┌──────────────┼───────────────┐
-      │              │               │
-Heartbeat       Job Execution     PoC Validator
-(Node)          work_units        Reward Engine
-                     │
-                     ▼
-           KASCompute State Engine
-                     │
-                     ▼
-           Frontend Dashboard (UI)
+ Kaspa Layer 1 (BlockDAG)
+          │
+          ▼
+ KASCompute Coordinator (API Engine)
+          │
+   ┌──────┼────────┐
+   │      │        │
+Heartbeat  Jobs   PoC Validation
+(Node)    work    Rewards
+          │
+          ▼
+  KASCompute State Engine
+          │
+          ▼
+ Frontend Dashboard (Real-Time UI)
 
+🔥 Proof-of-Compute Flow
+text
+Code kopieren
+CPU/GPU Node
+   │ heartbeat
+   ▼
+Coordinator
+   │ job assignment
+   ▼
+Work Execution (work_units)
+   │ submit proof
+   ▼
+PoC Validator + Reward Engine
+   │ validate + reward_kct
+   ▼
+Global State Engine
+   │ update network state
+   ▼
+Dashboard UI (PoC feed, jobs, rewards, leaderboard)
+
+🖥 Live Testnet Dashboard
+🔗 https://kascompute-testnet.onrender.com/dashboard/
+Displays:
+
+PoC feed (real-time)
+
+Node activity + last heartbeat
+
+Recent jobs grouped by workload
+
+Work units + rewards
+
+Network compute map
+
+Hardware detection (CPU/GPU)
+
+Emission & reward preview
+
+Treasury unlock simulation
+
+Investor value flow
+
+Leaderboard
+
+💎 KCT Token Emission Model
+Total Supply: 10,000,000,000 KCT
+Mining: 9,000,000,000 (90%)
+Treasury: 1,000,000,000 (10%)
+
+Emission Formula
+powershell
+Code kopieren
+R(m) = 200 * 0.99^(m - 1)
+Highlights
+Start reward: 200 KCT/block
+
+Monthly decay: 1%
+
+Duration: 168 months (14 years)
+
+Block time: 1 minute
+
+Fully visualized in dashboard
+
+🔌 API Endpoints
+Health
+http
+Code kopieren
+GET /health
+Reward Preview
+http
+Code kopieren
+POST /reward/preview
+{
+  "month": 12
+}
+Emission Curve
+http
+Code kopieren
+GET /emission/monthly
+Investor Value Flow
+http
+Code kopieren
+GET /investor/value_flow?fee_annual=100000&investor_pct=0.1&years=10&growth=0.1&discount=0.05
+
+🧩 Project Structure
+text
+Code kopieren
+kascompute-service/
+├── src/                     # Core backend (Rust / Axum)
+├── testnet-launcher/        # Production launcher (Render)
+│   ├── src/main.rs          # PoC validator & state engine
+│   └── public/              # Live dashboard (index.html, app.js, style.css)
+├── assets/                  # Logos, diagrams, visuals
+├── public/                  # Optional static site assets
+├── scripts/                 # Deployment helpers
+└── tests/                   # Placeholder tests
+
+🎨 Dashboard Styling (SCSS)
+scss
+Code kopieren
 .network-panel {
   background: #0c0c0c;
   border: 2px solid #00E3C0;
@@ -81,190 +186,63 @@ Heartbeat       Job Execution     PoC Validator
   }
 }
 
-
-💎 KCT Token Emission Model
-
-Total Supply: 10,000,000,000 KCT
-Mining Allocation: 9,000,000,000 KCT (90%)
-Treasury: 1,000,000,000 KCT (10%)
-
-Emission Parameters:
-
-Parameter	Value
-Start Reward	200 KCT per block
-Monthly Decay	1% (0.99 multiplier)
-Duration	14 years (~168 months)
-Block Time	1 minute
-
-Reward formula: R(m) = 200 * 0.99^(m - 1)
-The emission engine and dashboard visualize:
-
-monthly block reward
-
-cumulative emission
-
-mining vs. treasury split
-
-long-term supply behavior
-
-
-🖥 Live Testnet Dashboard
-
-Live Dashboard:
-https://kascompute-testnet.onrender.com/dashboard/
-
-The dashboard shows:
-
-Active nodes & last heartbeat
-
-Proof-of-Compute feed
-
-Recent jobs (grouped by job_id)
-
-Work units & estimated rewards
-
-Emission & reward preview
-
-Investor value flow simulation
-
-Treasury vesting model
-
-Network compute overview & leaderboard
-
-🔌 API Endpoints
-
-Note: endpoints may evolve as the prototype matures.
-
-Health
-GET /health
-
-Reward Preview
-POST /reward/preview
-Content-Type: application/json
-
-{
-  "month": 12
-}
-
-Example response:
-
-{
-  "month": 12,
-  "block_reward_kct": 178.48,
-  "notes": "KCT emission preview for month 12 (start 200 KCT, 1% monthly decay over 14 years)."
-}
-
-Monthly Emission Curve (1 → 168)
-GET /emission/monthly
-
-Example (truncated):
-
-[
-  { "month": 1, "block_reward_kct": 200.0 },
-  { "month": 2, "block_reward_kct": 198.0 },
-  ...
-  { "month": 168, "block_reward_kct": 37.33 }
-]
-
-Investor Value Flow (Post-Mining)
-GET /investor/value_flow?fee_annual=100000&investor_pct=0.1&years=10&growth=0.1&discount=0.05
-
-🏗 Project Structure
-kascompute-service/
-├── src/                     # Main Rust service (local backend)
-├── testnet-launcher/        # Testnet launcher for deployment (Render)
-│   ├── src/main.rs          # Coordinator API & state engine
-│   └── public/              # Live dashboard (index.html, app.js, style.css)
-├── public/                  # Website / landing assets (optional)
-├── assets/                  # Branding / logos / diagrams
-├── scripts/                 # Helper scripts (deployment / local tools)
-├── configs/                 # Reserved for future configs
-└── tests/                   # Placeholder for future tests
-
-Important:
-The live dashboard used in production is:
-testnet-launcher/public/index.html, app.js, style.css.
-
-💻 Running Locally
-Prerequisites
-
-Rust (stable)
-
-Cargo
-
-Start backend
+🚀 Run Locally
+bash
+Code kopieren
 cargo run
+Dashboard:
 
-
-Dashboard (default):
-
+arduino
+Code kopieren
 http://127.0.0.1:8080/dashboard/
 
-🚀 Deployment (Render)
-Build
-cargo build --release --package testnet-launcher
+🚀 Deploy (Render)
+Build:
 
-Start
+bash
+Code kopieren
+cargo build --release --package testnet-launcher
+Run:
+
+bash
+Code kopieren
 ./target/release/testnet-launcher
 
+🧭 Roadmap
+✅ Completed
+PoC validation
 
-Live dashboard:
+Node heartbeat
 
-https://kascompute-testnet.onrender.com/dashboard/
+Job grouping
 
-🧩 Roadmap (Public Repository Scope)
-✅ Implemented
+State engine
 
-KCT emission model (14-year schedule)
+Token emission model
 
-Reward preview API
+Dashboard
 
-Monthly emission API
+Investor simulation
 
-Live dashboard
+Architecture diagrams
 
-Cumulative emission model
-
-Treasury unlock curve
-
-Investor value flow simulation
-
-Node heartbeat & PoC submission
-
-Job aggregation & recent jobs view
-
-Network compute overview & leaderboard
-
-Architecture diagrams (PoC and DAG-style)
-
-🔜 Planned
-
+🔜 Coming Next
 Node scoring & reputation
 
-Real job distribution (beyond simulation)
+Real workload distribution
 
-Multi-node workload routing
+Multi-node routing
 
-Extended PoC validation strategies
+Developer SDK
 
-Developer SDK / client library
+Whitepaper v2
 
-Whitepaper v2 integration
+Compute provider marketplace
 
-⚠️ Disclaimer
-
-This repository is for research and development.
-Nothing here is financial advice or an economic guarantee.
-All parameters are subject to change as the protocol design evolves.
-
-📫 Contact
-
-Website: https://kascompute.org
-
-X/Twitter: https://x.com/KASCompute
-
-Telegram: https://t.me/KASCompute
-
+🧑‍💻 Author
 KASCompute Team — Founder: Tarik Kaya
 Built with 💚 on Kaspa.
 
+Website: https://kascompute.org
+X: https://x.com/KASCompute
+Telegram: https://t.me/KASCompute
