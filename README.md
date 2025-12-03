@@ -43,7 +43,7 @@ It demonstrates:
 
 # 🏗 Core Architecture
 
-```text
+
  Kaspa Layer 1 (BlockDAG)
           │
           ▼
@@ -61,8 +61,8 @@ Heartbeat  Jobs   PoC Validation
  Frontend Dashboard (Real-Time UI)
 
 🔥 Proof-of-Compute Flow
-text
-Code kopieren
+
+
 CPU/GPU Node
    │ heartbeat
    ▼
@@ -126,28 +126,27 @@ Fully visualized in dashboard
 
 🔌 API Endpoints
 Health
-http
-Code kopieren
+
+
 GET /health
 Reward Preview
-http
-Code kopieren
+
+
 POST /reward/preview
 {
   "month": 12
 }
 Emission Curve
-http
-Code kopieren
+
+
 GET /emission/monthly
 Investor Value Flow
-http
-Code kopieren
+
+
 GET /investor/value_flow?fee_annual=100000&investor_pct=0.1&years=10&growth=0.1&discount=0.05
 
 🧩 Project Structure
-text
-Code kopieren
+
 kascompute-service/
 ├── src/                     # Core backend (Rust / Axum)
 ├── testnet-launcher/        # Production launcher (Render)
@@ -160,7 +159,7 @@ kascompute-service/
 
 🎨 Dashboard Styling (SCSS)
 scss
-Code kopieren
+
 .network-panel {
   background: #0c0c0c;
   border: 2px solid #00E3C0;
@@ -188,24 +187,24 @@ Code kopieren
 
 🚀 Run Locally
 bash
-Code kopieren
+
 cargo run
 Dashboard:
 
 arduino
-Code kopieren
+
 http://127.0.0.1:8080/dashboard/
 
 🚀 Deploy (Render)
 Build:
 
 bash
-Code kopieren
+
 cargo build --release --package testnet-launcher
 Run:
 
 bash
-Code kopieren
+
 ./target/release/testnet-launcher
 
 🧭 Roadmap
