@@ -1381,3 +1381,91 @@ body {
   }
 }
 
+/* =========================================================
+   FINAL HARD FIX — GRID / HERO / MOBILE / CODEBLOCK
+   ========================================================= */
+
+/* Prevent ANY horizontal overflow */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* ---- HERO GRID FIX (DESKTOP) ---- */
+.section-grid-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  align-items: stretch;
+}
+
+/* Right card must NEVER push layout */
+.hero-right,
+.hero-stats-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Kill sticky on desktop (this caused drift) */
+.hero-right .hero-stats-card {
+  position: relative !important;
+  top: auto !important;
+}
+
+/* ---- MODE GRID FIX ---- */
+.mode-grid,
+.mode-card,
+.card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ---- CODEBLOCK FIX (ROOT CAUSE) ---- */
+.codeblock,
+.codeblock code,
+pre,
+pre code {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  max-width: 100%;
+}
+
+/* NEVER allow nowrap in onboarding */
+.mode-card pre,
+.mode-card code {
+  white-space: pre-wrap !important;
+}
+
+/* ---- MOBILE HARD FIX ---- */
+@media (max-width: 1024px) {
+
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+  }
+
+  .section-grid-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-right {
+    order: -1; /* stats ON TOP on mobile */
+  }
+
+  .hero-stats-card {
+    margin-bottom: 12px;
+  }
+
+  .mode-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Absolute safety net */
+* {
+  box-sizing: border-box;
+}
