@@ -1325,3 +1325,19 @@ iframe, canvas, img { max-width: 100%; }
 
   .topbar{ flex-wrap: wrap; gap: 10px; }
 }
+
+/* ===== Mobile-safe code blocks (no layout break) ===== */
+.codeblock {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;      /* erlaubt Umbruch */
+  word-break: break-word;
+  box-sizing: border-box;
+}
+
+.codeblock code {
+  display: block;
+  max-width: 100%;
+  white-space: pre-wrap;      /* wichtig für Handy */
+  overflow-wrap: anywhere;    /* harte Umbrüche wenn nötig */
+}
