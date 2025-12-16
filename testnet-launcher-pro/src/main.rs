@@ -13,16 +13,17 @@ use axum::{
     Json, Router,
 };
 use axum::http::HeaderMap;
+use axum::response::Redirect;
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+
 use tokio::time::{sleep, Duration};
 use tower_http::cors::{Any, CorsLayer};
-use axum::response::Redirect;
 use tower_http::services::{ServeDir, ServeFile};
 
 
-use serde_json::json;
 
 // =====================================
 // TIME HELPERS
@@ -875,15 +876,18 @@ async fn main() {
         .allow_headers(Any)
         .allow_methods(Any);
 
-// Static dashboard files
+// Debug (nur solange du willst)
+println!("CWD = {:?}", std::env::current_dir().unwrap());
+println!("index exists? {}", std::path::Path::new("dashboard-pro/index.html").exists());
+println!("style exists? {}", std::path::Path::new("dashboard-pro/style.css").exists());
+
 let dashboard_service = ServeDir::new("dashboard-pro")
     .append_index_html_on_directories(true)
     .not_found_service(ServeFile::new("dashboard-pro/index.html"));
 
 let app = Router::new()
-    // mount WITHOUT trailing slash
-    .nest_service("/dashboard", dashboard_service)
-
+    .route("/dashboard", get(|| async { Redirect::permanent("/dashboard/") }))
+    .nest_service("/dashboard/", dashboard_service)
     .route("/health", get(health))
     .route("/node/heartbeat", post(heartbeat))
     .route("/nodes", get(list_nodes_handler))
@@ -897,6 +901,7 @@ let app = Router::new()
     .route("/rewards/leaderboard", get(rewards_leaderboard))
     .layer(cors)
     .with_state(app_state);
+
 
 
 
