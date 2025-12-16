@@ -3,6 +3,10 @@ name = "testnet-launcher-pro"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "testnet-launcher-pro"
+path = "src/main.rs"
+
 [dependencies]
 axum = { version = "0.7", features = ["http1", "macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
