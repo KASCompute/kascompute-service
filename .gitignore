@@ -45,3 +45,19 @@ GeoLite2-City.mmdb
 
 # Cargo auto backup on Windows
 *.pdb
+
+# Legacy testnet launcher leftovers
+testnet-launcher/src/node.rs
+testnet-launcher/src/proof_of_compute.rs
+testnet-launcher/src/routes.rs
+testnet-launcher/src/scheduler.rs
+testnet-launcher/public/indexTEST.html
+
+# Local test keys & scripts
+tests/
+
+# Runtime-generated node identity / keys
+identity.json
+node_id.txt
+*_node_key.txt
+pro_node*_key.txt
