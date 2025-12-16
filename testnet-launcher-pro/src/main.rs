@@ -18,7 +18,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 use tower_http::cors::{Any, CorsLayer};
-use axum::routing::get_service;
+use axum::response::Redirect;
 use tower_http::services::{ServeDir, ServeFile};
 
 
@@ -875,16 +875,17 @@ async fn main() {
         .allow_headers(Any)
         .allow_methods(Any);
 
-let dashboard = get_service(
-    ServeDir::new("dashboard-pro")
+    // Static dashboard files
+    let dashboard_service = ServeDir::new("dashboard-pro")
         .append_index_html_on_directories(true)
-)
-.fallback_service(ServeFile::new("dashboard-pro/index.html"));
+        .not_found_service(ServeFile::new("dashboard-pro/index.html"));
 
-   
+    let app = Router::new()
+        // IMPORTANT: redirect /dashboard -> /dashboard/
+        .route("/dashboard", get(|| async { Redirect::temporary("/dashboard/") }))
+        // serve everything under /dashboard/...
+        .nest_service("/dashboard/", dashboard_service)
 
- let app = Router::new()
-        .nest_service("/dashboard", dashboard)
         .route("/health", get(health))
         .route("/node/heartbeat", post(heartbeat))
         .route("/nodes", get(list_nodes_handler))
@@ -892,12 +893,13 @@ let dashboard = get_service(
         .route("/jobs/proof", post(submit_proof))
         .route("/jobs", get(list_jobs))
         .route("/jobs/summary", get(jobs_summary))
-        .route("/jobs/recent", get(recent_jobs))                 // NEW
+        .route("/jobs/recent", get(recent_jobs))
         .route("/proofs", get(list_proofs))
         .route("/mining", get(mining_info))
-        .route("/rewards/leaderboard", get(rewards_leaderboard)) // NEW
+        .route("/rewards/leaderboard", get(rewards_leaderboard))
         .layer(cors)
         .with_state(app_state);
+
 
     // Render-ready PORT
     let port: u16 = env::var("PORT")
