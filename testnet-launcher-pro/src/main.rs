@@ -874,7 +874,7 @@ async fn main() {
         .allow_methods(Any);
 
     let app = Router::new()
-        .nest_service("/dashboard", ServeDir::new("testnet-launcher-pro/dashboard-pro"))
+        .nest_service("/dashboard", ServeDir::new("dashboard-pro"))
         .route("/health", get(health))
         .route("/node/heartbeat", post(heartbeat))
         .route("/nodes", get(list_nodes_handler))
