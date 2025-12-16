@@ -1490,3 +1490,78 @@ pre code {
     flex-wrap: wrap !important;
   }
 }
+
+/* =========================================
+   FINAL STICKY HOTFIX (DESKTOP + MOBILE)
+   Paste at VERY BOTTOM of style.css
+   ========================================= */
+
+/* Make sure sticky layers win */
+.sidebar { z-index: 40; }
+.topbar  { z-index: 50; position: sticky; top: 0; }
+
+/* Prevent layout drift / overflow push */
+.app-shell { overflow-x: hidden; }
+.main, .card, .section-grid, .section-grid-hero, .mode-grid { min-width: 0; }
+.codeblock, .codeblock code { min-width: 0; }
+
+/* --- DESKTOP: Sidebar stays sticky while main scrolls --- */
+@media (min-width: 1025px) {
+  .sidebar{
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+}
+
+/* --- MOBILE/TABLET: Sidebar becomes TOP STICKY bar + header sticks under it --- */
+@media (max-width: 1024px) {
+  /* Fixed top sidebar (reliable, even inside embed/scroll containers) */
+  .sidebar{
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+
+    height: 128px;              /* adjust 118-140px if you want */
+    padding: 12px 12px 10px;
+
+    overflow-x: auto;
+    overflow-y: hidden;
+
+    border-right: none;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(18px);
+  }
+
+  /* Make nav row scrollable horizontally */
+  .nav{
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+  .nav-link{ white-space: nowrap; }
+
+  /* Footnote kills space on mobile */
+  .sidebar-footnote{ display: none; }
+
+  /* Push content below fixed sidebar */
+  .main{
+    padding: 14px 14px 22px;
+    margin-top: 138px;          /* should be >= .sidebar height */
+  }
+
+  /* Header stays visible UNDER the fixed sidebar */
+  .topbar{
+    top: 128px;                 /* same as .sidebar height */
+    border-radius: 18px;
+  }
+
+  /* Mobile code blocks: wrap clean */
+  .codeblock { white-space: pre-wrap; }
+  .codeblock code { white-space: pre-wrap; overflow-wrap: anywhere; }
+}
