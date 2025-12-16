@@ -23,6 +23,7 @@ use tokio::time::{sleep, Duration};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 
+use std::path::PathBuf;
 
 
 // =====================================
@@ -876,13 +877,15 @@ async fn main() {
         .allow_headers(Any)
         .allow_methods(Any);
 
-println!("CWD = {:?}", std::env::current_dir().unwrap());
-println!("index exists? {}", std::path::Path::new("dashboard-pro/index.html").exists());
-println!("style exists? {}", std::path::Path::new("dashboard-pro/style.css").exists());
+let dashboard_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dashboard-pro");
 
-let dashboard_service = ServeDir::new("dashboard-pro")
+println!("dashboard_root = {:?}", dashboard_root);
+println!("index exists? {}", dashboard_root.join("index.html").exists());
+println!("style exists? {}", dashboard_root.join("style.css").exists());
+
+let dashboard_service = ServeDir::new(dashboard_root.clone())
     .append_index_html_on_directories(true)
-    .not_found_service(ServeFile::new("dashboard-pro/index.html"));
+    .not_found_service(ServeFile::new(dashboard_root.join("index.html")));
 
 let app = Router::new()
     .route("/", get(|| async { Redirect::permanent("/dashboard/") }))
