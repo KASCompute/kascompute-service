@@ -876,7 +876,6 @@ async fn main() {
         .allow_headers(Any)
         .allow_methods(Any);
 
-// Debug (nur solange du willst)
 println!("CWD = {:?}", std::env::current_dir().unwrap());
 println!("index exists? {}", std::path::Path::new("dashboard-pro/index.html").exists());
 println!("style exists? {}", std::path::Path::new("dashboard-pro/style.css").exists());
@@ -886,6 +885,7 @@ let dashboard_service = ServeDir::new("dashboard-pro")
     .not_found_service(ServeFile::new("dashboard-pro/index.html"));
 
 let app = Router::new()
+    .route("/", get(|| async { Redirect::permanent("/dashboard/") }))
     .route("/dashboard", get(|| async { Redirect::permanent("/dashboard/") }))
     .nest_service("/dashboard/", dashboard_service)
     .route("/health", get(health))
@@ -901,8 +901,6 @@ let app = Router::new()
     .route("/rewards/leaderboard", get(rewards_leaderboard))
     .layer(cors)
     .with_state(app_state);
-
-
 
 
     // Render-ready PORT
