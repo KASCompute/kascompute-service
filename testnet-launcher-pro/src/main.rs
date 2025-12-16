@@ -18,6 +18,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 
 use serde_json::json;
 
@@ -873,6 +874,7 @@ async fn main() {
         .allow_methods(Any);
 
     let app = Router::new()
+        .nest_service("/dashboard", ServeDir::new("testnet-launcher-pro/dashboard-pro"))
         .route("/health", get(health))
         .route("/node/heartbeat", post(heartbeat))
         .route("/nodes", get(list_nodes_handler))

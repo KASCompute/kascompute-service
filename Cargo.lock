@@ -1451,7 +1451,6 @@ dependencies = [
  "anyhow",
  "axum",
  "hex",
- "rand",
  "serde",
  "serde_json",
  "tokio",
