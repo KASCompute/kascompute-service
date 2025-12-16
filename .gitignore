@@ -40,6 +40,8 @@ node-config.yaml
 # KASCompute sensitive node files
 configs/node-identity.json
 configs/node-config.yaml
+GeoLite2-City.mmdb
+
 
 # Cargo auto backup on Windows
 *.pdb

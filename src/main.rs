@@ -189,7 +189,11 @@ async fn node_heartbeat(Json(payload): Json<NodeHeartbeat>) -> StatusCode {
     );
 
     // Public Key auch im Proof-of-Compute-Registry hinterlegen (für Signaturprüfung)
-    crate::proof_of_compute::registry().insert(&payload.node_id, &payload.public_key_hex);
+    {
+    let reg = crate::proof_of_compute::registry();
+    let mut lock = reg.lock().unwrap();
+    lock.insert(payload.node_id.clone(), payload.public_key_hex.clone());
+}
 
     // Timestamp für "last_seen" und Score
     let now = SystemTime::now()
