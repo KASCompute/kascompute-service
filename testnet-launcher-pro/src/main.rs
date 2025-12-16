@@ -18,7 +18,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
+use axum::routing::get_service;
+use tower_http::services::{ServeDir, ServeFile};
+
 
 use serde_json::json;
 
@@ -873,8 +875,16 @@ async fn main() {
         .allow_headers(Any)
         .allow_methods(Any);
 
-    let app = Router::new()
-        .nest_service("/dashboard", ServeDir::new("dashboard-pro"))
+let dashboard = get_service(
+    ServeDir::new("dashboard-pro")
+        .append_index_html_on_directories(true)
+)
+.fallback_service(ServeFile::new("dashboard-pro/index.html"));
+
+   
+
+ let app = Router::new()
+        .nest_service("/dashboard", dashboard)
         .route("/health", get(health))
         .route("/node/heartbeat", post(heartbeat))
         .route("/nodes", get(list_nodes_handler))
