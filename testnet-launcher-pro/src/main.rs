@@ -875,30 +875,29 @@ async fn main() {
         .allow_headers(Any)
         .allow_methods(Any);
 
-    // Static dashboard files
-    let dashboard_service = ServeDir::new("dashboard-pro")
-        .append_index_html_on_directories(true)
-        .not_found_service(ServeFile::new("dashboard-pro/index.html"));
+// Static dashboard files
+let dashboard_service = ServeDir::new("dashboard-pro")
+    .append_index_html_on_directories(true)
+    .not_found_service(ServeFile::new("dashboard-pro/index.html"));
 
-    let app = Router::new()
-        // IMPORTANT: redirect /dashboard -> /dashboard/
-        .route("/dashboard", get(|| async { Redirect::temporary("/dashboard/") }))
-        // serve everything under /dashboard/...
-        .nest_service("/dashboard/", dashboard_service)
+let app = Router::new()
+    // mount WITHOUT trailing slash
+    .nest_service("/dashboard", dashboard_service)
 
-        .route("/health", get(health))
-        .route("/node/heartbeat", post(heartbeat))
-        .route("/nodes", get(list_nodes_handler))
-        .route("/jobs/next", post(next_job))
-        .route("/jobs/proof", post(submit_proof))
-        .route("/jobs", get(list_jobs))
-        .route("/jobs/summary", get(jobs_summary))
-        .route("/jobs/recent", get(recent_jobs))
-        .route("/proofs", get(list_proofs))
-        .route("/mining", get(mining_info))
-        .route("/rewards/leaderboard", get(rewards_leaderboard))
-        .layer(cors)
-        .with_state(app_state);
+    .route("/health", get(health))
+    .route("/node/heartbeat", post(heartbeat))
+    .route("/nodes", get(list_nodes_handler))
+    .route("/jobs/next", post(next_job))
+    .route("/jobs/proof", post(submit_proof))
+    .route("/jobs", get(list_jobs))
+    .route("/jobs/summary", get(jobs_summary))
+    .route("/jobs/recent", get(recent_jobs))
+    .route("/proofs", get(list_proofs))
+    .route("/mining", get(mining_info))
+    .route("/rewards/leaderboard", get(rewards_leaderboard))
+    .layer(cors)
+    .with_state(app_state);
+
 
 
     // Render-ready PORT
