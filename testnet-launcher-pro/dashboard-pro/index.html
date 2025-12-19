@@ -6,18 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
 
-  <!-- Leaflet CSS -->
-  <link
-    rel="stylesheet"
-    href="style.css"
-  />
-
   <!-- Styles -->
   <link rel="stylesheet" href="style.css" />
 
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js (UMD => window.Chart) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 
 <!-- IMPORTANT:
@@ -26,7 +23,6 @@
   - Render (backend separate):    data-api-base="https://kascompute-testnet.onrender.com"
 -->
 <body data-api-base="" data-render-base="https://kascompute-testnet.onrender.com">
-
 
   <div class="app-shell">
     <!-- SIDEBAR -->
@@ -67,10 +63,14 @@
           <div class="commandbar">
             <div class="hud-chips" aria-label="Live status">
               <span class="chip chip-live" id="hud-live"><span class="live-dot"></span>LIVE</span>
-              <span class="chip"><span class="chip-k">NODES <span class="pill-count" id="nodes-pill-count">–/–</span></span><span class="chip-v" id="hud-nodes">–</span></span>
+              <span class="chip">
+                <span class="chip-k">NODES <span class="pill-count" id="nodes-pill-count">–/–</span></span>
+                <span class="chip-v" id="hud-nodes">–</span>
+              </span>
               <span class="chip"><span class="chip-k">JOBS</span><span class="chip-v" id="hud-jobs">–</span></span>
               <span class="chip"><span class="chip-k">HEIGHT</span><span class="chip-v" id="hud-height">–</span></span>
             </div>
+
             <div class="command-search">
               <span class="search-icon">⌕</span>
               <input id="global-search" class="search-input" type="search" placeholder="Search node_id, job id, key, status…" autocomplete="off" />
@@ -93,297 +93,278 @@
         </div>
       </header>
 
-  <div class="instance-banner" id="instance-banner" role="status" aria-live="polite">
-    <div class="instance-banner-inner">
-      <div class="instance-banner-left">
-        <span class="instance-badge" id="instance-badge">—</span>
-        <span class="instance-text" id="instance-text">—</span> <span class="instance-count" id="nodes-banner-count">—</span>
+      <div class="instance-banner" id="instance-banner" role="status" aria-live="polite">
+        <div class="instance-banner-inner">
+          <div class="instance-banner-left">
+            <span class="instance-badge" id="instance-badge">—</span>
+            <span class="instance-text" id="instance-text">—</span>
+            <span class="instance-count" id="nodes-banner-count">—</span>
+          </div>
+          <div class="instance-banner-actions">
+            <button class="btn btn-ghost" id="copy-instance" type="button">Copy API Base</button>
+            <button class="btn btn-ghost" id="switch-instance" type="button">Open Render</button>
+          </div>
+        </div>
       </div>
-      <div class="instance-banner-actions">
-        <button class="btn btn-ghost" id="copy-instance" type="button">Copy API Base</button>
-        <button class="btn btn-ghost" id="switch-instance" type="button">Open Render</button>
-      </div>
-    </div>
-  </div>
-
 
       <!-- HOW TO JOIN -->
-<section id="section-howto" class="section">
-  <div class="section-header">
-    <div>
-      <div class="section-kicker">Onboard</div>
-      <h2>How to join the KASCompute testnet</h2>
-      <p class="section-sub">
-        Download the community scripts and run a node + miner in minutes.
-        Your node identity is auto-generated on first launch (persistent <code>identity.json</code>).
-      </p>
-    </div>
+      <section id="section-howto" class="section">
+        <div class="section-header">
+          <div>
+            <div class="section-kicker">Onboard</div>
+            <h2>How to join the KASCompute testnet</h2>
+            <p class="section-sub">
+              Download the community scripts and run a node + miner in minutes.
+              Your node identity is auto-generated on first launch (persistent <code>identity.json</code>).
+            </p>
+          </div>
 
-<div class="section-actions">
-  <!-- ✅ ONE-CLICK PACK (recommended) -->
-  <a href="kascompute-testnet-pack.zip" class="btn" download>
-    Download full pack (.zip)
-  </a>
+          <div class="section-actions">
+            <a href="kascompute-testnet-pack.zip" class="btn" download>Download full pack (.zip)</a>
+            <a href="start_all_pro.ps1" class="btn btn-secondary" download>Quick start (node + miner)</a>
+            <a href="start_node_pro.ps1" class="btn btn-ghost" download>Node script</a>
+            <a href="start_miner_pro.ps1" class="btn btn-ghost" download>Miner script</a>
+            <a href="README.txt" class="btn btn-ghost" download>Readme</a>
+          </div>
+        </div>
 
-  <!-- ✅ Quick start -->
-  <a href="start_all_pro.ps1" class="btn btn-secondary" download>
-    Quick start (node + miner)
-  </a>
+        <div class="section-grid section-grid-hero">
+          <div class="hero-left">
+            <div class="mode-grid">
+              <div class="mode-card mode-card-highlight">
+                <div class="mode-label">Recommended</div>
+                <div class="mode-title">Fastest path: run node + miner</div>
+                <p class="mode-text">
+                  This mirrors mainnet behaviour: the node maintains presence (heartbeats),
+                  the miner executes compute jobs and submits proofs for KCT rewards.
+                </p>
+                <ul class="mode-list">
+                  <li>Install <b>PowerShell 7</b> (required)</li>
+                  <li>Download the pack and unzip into one folder</li>
+                  <li>Run <code>start_all_pro.ps1</code> (opens 2 windows)</li>
+                </ul>
 
-  <!-- Individual scripts -->
-  <a href="start_node_pro.ps1" class="btn btn-ghost" download>Node script</a>
-  <a href="start_miner_pro.ps1" class="btn btn-ghost" download>Miner script</a>
-
-  <!-- ✅ README -->
-  <a href="README.txt" class="btn btn-ghost" download>
-    Readme
-  </a>
-</div>
-</div>
-
-
-  <div class="section-grid section-grid-hero">
-    <div class="hero-left">
-      <div class="mode-grid">
-
-        <!-- STEP-BY-STEP -->
-        <div class="mode-card mode-card-highlight">
-          <div class="mode-label">Recommended</div>
-          <div class="mode-title">Fastest path: run node + miner</div>
-          <p class="mode-text">
-            This mirrors mainnet behaviour: the node maintains presence (heartbeats),
-            the miner executes compute jobs and submits proofs for KCT rewards.
-          </p>
-          <ul class="mode-list">
-            <li>Install <b>PowerShell 7</b> (required)</li>
-            <li>Download the pack and unzip into one folder</li>
-            <li>Run <code>start_all_pro.ps1</code> (opens 2 windows)</li>
-          </ul>
-
-          <div class="howto-snippet">
-            <div class="mini-label">Run</div>
-            <pre class="codeblock"><code>Right click → Run with PowerShell
+                <div class="howto-snippet">
+                  <div class="mini-label">Run</div>
+                  <pre class="codeblock"><code>Right click → Run with PowerShell
 or inside pwsh:
 
 pwsh -ExecutionPolicy Bypass -File .\start_all_pro.ps1</code></pre>
-          </div>
+                </div>
 
-          <div class="howto-footnote">
-            First run auto-creates <code>identity.json</code> (node_id + key). Keep it to preserve your identity.
-          </div>
-        </div>
+                <div class="howto-footnote">
+                  First run auto-creates <code>identity.json</code> (node_id + key). Keep it to preserve your identity.
+                </div>
+              </div>
 
-        <!-- NODE ONLY -->
-        <div class="mode-card">
-          <div class="mode-label">Option 1</div>
-          <div class="mode-title">Run a KASCompute node</div>
-          <p class="mode-text">
-            Your node sends heartbeats to the orchestrator and appears on the map and node list (GeoIP when available).
-          </p>
-          <ul class="mode-list">
-            <li>Run <code>start_node_pro.ps1</code></li>
-            <li>Keep the window open to stay online</li>
-            <li>Node identity is stored in <code>identity.json</code></li>
-          </ul>
-          <div class="mode-actions">
-            <a href="start_node_pro.ps1" class="btn btn-secondary" download>Download start_node_pro.ps1</a>
-          </div>
-        </div>
+              <div class="mode-card">
+                <div class="mode-label">Option 1</div>
+                <div class="mode-title">Run a KASCompute node</div>
+                <p class="mode-text">
+                  Your node sends heartbeats to the orchestrator and appears on the map and node list (GeoIP when available).
+                </p>
+                <ul class="mode-list">
+                  <li>Run <code>start_node_pro.ps1</code></li>
+                  <li>Keep the window open to stay online</li>
+                  <li>Node identity is stored in <code>identity.json</code></li>
+                </ul>
+                <div class="mode-actions">
+                  <a href="start_node_pro.ps1" class="btn btn-secondary" download>Download start_node_pro.ps1</a>
+                </div>
+              </div>
 
-        <!-- MINER ONLY -->
-        <div class="mode-card">
-          <div class="mode-label">Option 2</div>
-          <div class="mode-title">Start mining (compute + proofs)</div>
-          <p class="mode-text">
-            The miner requests jobs, performs compute, submits proofs and participates in fair reward distribution.
-            <b>Hash mode</b> is treated as verified compute (bonus).
-          </p>
-          <ul class="mode-list">
-            <li>Start your node first (recommended)</li>
-            <li>Run <code>start_miner_pro.ps1</code></li>
-            <li>Workload toggle via <code>kascompute_env.ps1</code></li>
-          </ul>
+              <div class="mode-card">
+                <div class="mode-label">Option 2</div>
+                <div class="mode-title">Start mining (compute + proofs)</div>
+                <p class="mode-text">
+                  The miner requests jobs, performs compute, submits proofs and participates in fair reward distribution.
+                  <b>Hash mode</b> is treated as verified compute (bonus).
+                </p>
+                <ul class="mode-list">
+                  <li>Start your node first (recommended)</li>
+                  <li>Run <code>start_miner_pro.ps1</code></li>
+                  <li>Workload toggle via <code>kascompute_env.ps1</code></li>
+                </ul>
 
-          <div class="howto-snippet">
-            <div class="mini-label">Workload mode</div>
-            <pre class="codeblock"><code># inside kascompute_env.ps1
+                <div class="howto-snippet">
+                  <div class="mini-label">Workload mode</div>
+                  <pre class="codeblock"><code># inside kascompute_env.ps1
 WORKLOAD_MODE="sim"   # lightweight demo
 WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
-          </div>
+                </div>
 
-          <div class="mode-actions">
-            <a href="start_miner_pro.ps1" class="btn btn-secondary" download>Download start_miner_pro.ps1</a>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Extra downloads + notes -->
-      <div class="onboard-extras">
-        <div class="card onboard-card">
-          <div class="card-header-row">
-            <div>
-              <div class="card-label">Configuration</div>
-              <h3>Files included in the pack</h3>
-            </div>
-          </div>
-
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Purpose</th>
-                  <th>Download</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><code>start_all_pro.ps1</code></td>
-                  <td>Starts node + miner (recommended)</td>
-                  <td><a href="start_all_pro.ps1" download>download</a></td>
-                </tr>
-                <tr>
-                  <td><code>start_node_pro.ps1</code></td>
-                  <td>Heartbeat / online presence (node)</td>
-                  <td><a href="start_node_pro.ps1" download>download</a></td>
-                </tr>
-                <tr>
-                  <td><code>start_miner_pro.ps1</code></td>
-                  <td>Jobs → compute → proofs (miner)</td>
-                  <td><a href="start_miner_pro.ps1" download>download</a></td>
-                </tr>
-                <tr>
-                  <td><code>kascompute_env.ps1</code></td>
-                  <td>API base, workload mode, tuning</td>
-                  <td><a href="kascompute_env.ps1" download>download</a></td>
-                </tr>
-                <tr>
-                  <td><code>identity.ps1</code></td>
-                  <td>Auto node_id + key (creates <code>identity.json</code>)</td>
-                  <td><a href="identity.ps1" download>download</a></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="howto-footnote">
-            If PowerShell blocks scripts: run in <code>pwsh</code> with <code>-ExecutionPolicy Bypass</code>.
-          </div>
-        </div>
-
-        <p class="hero-footnote">
-          Testnet only • This is a non-production demo network. Rewards and parameters may evolve before mainnet.
-        </p>
-      </div>
-    </div>
-
-    <!-- RIGHT SIDE: keep your live card as-is -->
-    <div class="hero-right">
-      <div class="card hero-stats-card">
-        <div class="card-header-row">
-          <div>
-            <div class="card-label">Live network pulse</div>
-            <h3>Realtime KCT emission</h3>
-          </div>
-        </div>
-
-        <div class="hero-stats-grid">
-          <div>
-            <div class="mini-label">Block height</div>
-            <div class="hero-stat-value" id="h-block-height">–</div>
-            <div class="mini-sub" id="h-month-index">–</div>
-          </div>
-          <div>
-            <div class="mini-label">Current block reward</div>
-            <div class="hero-stat-value" id="h-block-reward">– KCT</div>
-            <div class="mini-sub" id="h-block-reward-nano">– nanoKCT</div>
-          </div>
-          <div>
-            <div class="mini-label">Total emitted</div>
-            <div class="hero-stat-value" id="h-emitted-kct">– KCT</div>
-            <div class="mini-sub" id="h-emitted-nano">– nanoKCT</div>
-          </div>
-        </div>
-
-        <div class="hero-divider"></div>
-
-        <div class="hero-bottom-row">
-          <div>
-            <div class="mini-label">Online nodes</div>
-            <div class="mini-value" id="h-node-count">0</div>
-          </div>
-          <div>
-            <div class="mini-label">Jobs (P / R / C)</div>
-            <div class="mini-value" id="h-jobs-summary">– / – / –</div>
-          </div>
-          <div>
-            <div class="mini-label">Top miner</div>
-            <div class="mini-value" id="h-top-miner">–</div>
-            <div class="mini-sub" id="h-top-miner-share">– % hashrate</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  
-
-          <div class="card" id="system-card">
-            <div class="card-header-row">
-              <div>
-                <div class="card-label">SYSTEM</div>
-                <h3>API / Network Health</h3>
-              </div>
-              <span class="live-indicator" id="api-live">
-                <span class="live-dot" id="api-dot"></span>
-                LIVE
-              </span>
-            </div>
-
-            <div class="hero-divider"></div>
-
-            <div class="jobs-summary-row">
-              <div>
-                <div class="mini-label">API</div>
-                <div class="mini-value" id="api-status">–</div>
-                <div class="mini-sub" id="api-latency">–</div>
-              </div>
-              <div>
-                <div class="mini-label">NODES</div>
-                <div class="mini-value" id="api-nodes-status">–</div>
-                <div class="mini-sub" id="api-nodes-latency">–</div>
-              </div>
-              <div>
-                <div class="mini-label">JOBS</div>
-                <div class="mini-value" id="api-jobs-status">–</div>
-                <div class="mini-sub" id="api-jobs-latency">–</div>
-              </div>
-              <div>
-                <div class="mini-label">MINING</div>
-                <div class="mini-value" id="api-mining-status">–</div>
-                <div class="mini-sub" id="api-mining-latency">–</div>
+                <div class="mode-actions">
+                  <a href="start_miner_pro.ps1" class="btn btn-secondary" download>Download start_miner_pro.ps1</a>
+                </div>
               </div>
             </div>
 
-            <div class="howto-snippet">
-              <div class="card-label">QUICKSTART</div>
-              <div class="codeblock">
-                <code id="quickstart-code"># Start a node (example)
+            <div class="onboard-extras">
+              <div class="card onboard-card">
+                <div class="card-header-row">
+                  <div>
+                    <div class="card-label">Configuration</div>
+                    <h3>Files included in the pack</h3>
+                  </div>
+                </div>
+
+                <div class="table-wrapper">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>File</th>
+                        <th>Purpose</th>
+                        <th>Download</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><code>start_all_pro.ps1</code></td>
+                        <td>Starts node + miner (recommended)</td>
+                        <td><a href="start_all_pro.ps1" download>download</a></td>
+                      </tr>
+                      <tr>
+                        <td><code>start_node_pro.ps1</code></td>
+                        <td>Heartbeat / online presence (node)</td>
+                        <td><a href="start_node_pro.ps1" download>download</a></td>
+                      </tr>
+                      <tr>
+                        <td><code>start_miner_pro.ps1</code></td>
+                        <td>Jobs → compute → proofs (miner)</td>
+                        <td><a href="start_miner_pro.ps1" download>download</a></td>
+                      </tr>
+                      <tr>
+                        <td><code>kascompute_env.ps1</code></td>
+                        <td>API base, workload mode, tuning</td>
+                        <td><a href="kascompute_env.ps1" download>download</a></td>
+                      </tr>
+                      <tr>
+                        <td><code>identity.ps1</code></td>
+                        <td>Auto node_id + key (creates <code>identity.json</code>)</td>
+                        <td><a href="identity.ps1" download>download</a></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="howto-footnote">
+                  If PowerShell blocks scripts: run in <code>pwsh</code> with <code>-ExecutionPolicy Bypass</code>.
+                </div>
+              </div>
+
+              <p class="hero-footnote">
+                Testnet only • This is a non-production demo network. Rewards and parameters may evolve before mainnet.
+              </p>
+            </div>
+          </div>
+
+          <div class="hero-right">
+            <div class="card hero-stats-card">
+              <div class="card-header-row">
+                <div>
+                  <div class="card-label">Live network pulse</div>
+                  <h3>Realtime KCT emission</h3>
+                </div>
+              </div>
+
+              <div class="hero-stats-grid">
+                <div>
+                  <div class="mini-label">Block height</div>
+                  <div class="hero-stat-value" id="h-block-height">–</div>
+                  <div class="mini-sub" id="h-month-index">–</div>
+                </div>
+                <div>
+                  <div class="mini-label">Current block reward</div>
+                  <div class="hero-stat-value" id="h-block-reward">– KCT</div>
+                  <div class="mini-sub" id="h-block-reward-nano">– nanoKCT</div>
+                </div>
+                <div>
+                  <div class="mini-label">Total emitted</div>
+                  <div class="hero-stat-value" id="h-emitted-kct">– KCT</div>
+                  <div class="mini-sub" id="h-emitted-nano">– nanoKCT</div>
+                </div>
+              </div>
+
+              <div class="hero-divider"></div>
+
+              <div class="hero-bottom-row">
+                <div>
+                  <div class="mini-label">Online nodes</div>
+                  <div class="mini-value" id="h-node-count">0</div>
+                </div>
+                <div>
+                  <div class="mini-label">Jobs (P / R / C)</div>
+                  <div class="mini-value" id="h-jobs-summary">– / – / –</div>
+                </div>
+                <div>
+                  <div class="mini-label">Top miner</div>
+                  <div class="mini-value" id="h-top-miner">–</div>
+                  <div class="mini-sub" id="h-top-miner-share">– % hashrate</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" id="system-card">
+              <div class="card-header-row">
+                <div>
+                  <div class="card-label">SYSTEM</div>
+                  <h3>API / Network Health</h3>
+                </div>
+                <span class="live-indicator" id="api-live">
+                  <span class="live-dot" id="api-dot"></span>
+                  LIVE
+                </span>
+              </div>
+
+              <div class="hero-divider"></div>
+
+              <div class="jobs-summary-row">
+                <div>
+                  <div class="mini-label">API</div>
+                  <div class="mini-value" id="api-status">–</div>
+                  <div class="mini-sub" id="api-latency">–</div>
+                </div>
+                <div>
+                  <div class="mini-label">NODES</div>
+                  <div class="mini-value" id="api-nodes-status">–</div>
+                  <div class="mini-sub" id="api-nodes-latency">–</div>
+                </div>
+                <div>
+                  <div class="mini-label">JOBS</div>
+                  <div class="mini-value" id="api-jobs-status">–</div>
+                  <div class="mini-sub" id="api-jobs-latency">–</div>
+                </div>
+                <div>
+                  <div class="mini-label">MINING</div>
+                  <div class="mini-value" id="api-mining-status">–</div>
+                  <div class="mini-sub" id="api-mining-latency">–</div>
+                </div>
+              </div>
+
+              <div class="howto-snippet">
+                <div class="card-label">QUICKSTART</div>
+                <div class="codeblock">
+                  <code id="quickstart-code"># Start a node (example)
 ./start_node_pro.ps1
 
 # Start miner (example)
 ./start_miner_pro.ps1</code>
+                </div>
+                <div class="mode-actions" style="margin-top:10px">
+                  <button class="btn btn-ghost" id="copy-quickstart" type="button">Copy</button>
+                  <button class="btn btn-secondary" id="open-downloads" type="button">Downloads</button>
+                </div>
+                <p class="hero-footnote">
+                  Tip: share a deep link like
+                  <span style="font-family:var(--mono);color:rgba(0,227,192,.95)">?node=kct-pro-node-01</span>
+                  or
+                  <span style="font-family:var(--mono);color:rgba(0,227,192,.95)">?job=42</span>.
+                </p>
               </div>
-              <div class="mode-actions" style="margin-top:10px">
-                <button class="btn btn-ghost" id="copy-quickstart" type="button">Copy</button>
-                <button class="btn btn-secondary" id="open-downloads" type="button">Downloads</button>
-              </div>
-              <p class="hero-footnote">Tip: share a deep link like <span style="font-family:var(--mono);color:rgba(0,227,192,.95)">?node=kct-pro-node-01</span> or <span style="font-family:var(--mono);color:rgba(0,227,192,.95)">?job=42</span>.</p>
             </div>
           </div>
-
-</div>
-</section>
-
+        </div>
+      </section>
 
       <!-- NETWORK OVERVIEW -->
       <section id="section-overview" class="section">
@@ -391,9 +372,7 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
           <div>
             <div class="section-kicker">Overview</div>
             <h2>Network health &amp; DAG preview</h2>
-            <p class="section-sub">
-              High-level telemetry for block emission, hash distribution and live DAG activity.
-            </p>
+            <p class="section-sub">High-level telemetry for block emission, hash distribution and live DAG activity.</p>
           </div>
         </div>
 
@@ -410,7 +389,6 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
             </div>
           </div>
 
-          <!-- KGI embed -->
           <div class="card card-dag">
             <div class="card-header-row">
               <div>
@@ -420,17 +398,11 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
             </div>
 
             <div class="kgi-wrapper">
-              <iframe
-                class="kgi-iframe"
-                src="https://kgi.kaspad.net/"
-                title="Kaspa Graph Inspector"
-                loading="lazy"
-              ></iframe>
+              <iframe class="kgi-iframe" src="https://kgi.kaspad.net/" title="Kaspa Graph Inspector" loading="lazy"></iframe>
             </div>
 
             <div class="dag-footnote">
-              Live data from Kaspa’s KGI instance.
-              If the embed is blocked, open in a new tab:
+              Live data from Kaspa’s KGI instance. If blocked, open:
               <a href="https://kgi.kaspad.net/" target="_blank" rel="noreferrer">kgi.kaspad.net</a>
             </div>
           </div>
@@ -443,9 +415,7 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
           <div>
             <div class="section-kicker">Topology</div>
             <h2>Nodes &amp; world map</h2>
-            <p class="section-sub">
-              Every online node that sends heartbeats appears here — with GeoIP when available.
-            </p>
+            <p class="section-sub">Every online node that sends heartbeats appears here — with GeoIP when available.</p>
           </div>
         </div>
 
@@ -492,10 +462,9 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
               </div>
             </div>
             <div id="node-map"></div>
-    <div class="state loading" id="map-state">
-      <span class="dot"></span>LOADING MAP
-    </div>
-    
+            <div class="state loading" id="map-state">
+              <span class="dot"></span>LOADING MAP
+            </div>
             <div class="map-footnote">
               GeoIP uses proxy-aware headers on Render (X-Forwarded-For). If Geo is missing, a fallback point is used.
             </div>
@@ -509,9 +478,7 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
           <div>
             <div class="section-kicker">Rewards</div>
             <h2>Mining stats &amp; leaderboards</h2>
-            <p class="section-sub">
-              Live mining view based on the engine’s 5-minute work window and lifetime nanoKCT balances.
-            </p>
+            <p class="section-sub">Live mining view based on the engine’s 5-minute work window and lifetime nanoKCT balances.</p>
           </div>
         </div>
 
@@ -569,9 +536,7 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
           <div>
             <div class="section-kicker">Activity</div>
             <h2>Activity &amp; jobs</h2>
-            <p class="section-sub">
-              Recent proofs and compute jobs flowing through the orchestrator.
-            </p>
+            <p class="section-sub">Recent proofs and compute jobs flowing through the orchestrator.</p>
           </div>
         </div>
 
@@ -585,22 +550,10 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
             </div>
 
             <div class="jobs-summary-row">
-              <div>
-                <div class="mini-label">Pending</div>
-                <div class="mini-value" id="jobs-pending">0</div>
-              </div>
-              <div>
-                <div class="mini-label">Running</div>
-                <div class="mini-value" id="jobs-running">0</div>
-              </div>
-              <div>
-                <div class="mini-label">Completed</div>
-                <div class="mini-value" id="jobs-completed">0</div>
-              </div>
-              <div>
-                <div class="mini-label">Total</div>
-                <div class="mini-value" id="jobs-total">0</div>
-              </div>
+              <div><div class="mini-label">Pending</div><div class="mini-value" id="jobs-pending">0</div></div>
+              <div><div class="mini-label">Running</div><div class="mini-value" id="jobs-running">0</div></div>
+              <div><div class="mini-label">Completed</div><div class="mini-value" id="jobs-completed">0</div></div>
+              <div><div class="mini-label">Total</div><div class="mini-value" id="jobs-total">0</div></div>
             </div>
 
             <div class="table-wrapper">
@@ -626,10 +579,7 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
                 <div class="card-label">Live proof stream</div>
                 <h3>Realtime proofs flowing from miners into the orchestrator.</h3>
               </div>
-              <div class="live-indicator">
-                <span class="live-dot"></span>
-                LIVE
-              </div>
+              <div class="live-indicator"><span class="live-dot"></span>LIVE</div>
             </div>
 
             <div class="terminal-shell">
@@ -643,31 +593,16 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
               </div>
 
               <div class="terminal" id="proof-terminal">
-                <div class="terminal-line muted">
-                  Waiting for proofs... start a miner to see activity.
-                </div>
+                <div class="terminal-line muted">Waiting for proofs... start a miner to see activity.</div>
               </div>
 
-              <div class="terminal-prompt">
-                kascompute&gt; <span class="cursor"></span>
-              </div>
+              <div class="terminal-prompt">kascompute&gt; <span class="cursor"></span></div>
             </div>
           </div>
         </div>
       </section>
     </main>
   </div>
-
-  <!-- Leaflet JS -->
-  <script
-    src="app.js"
-  ></script>
-
-  <!-- Chart.js -->
-  <script src="app.js"></script>
-
-  <!-- App logic -->
-  <script src="app.js"></script>
 
   <!-- Explorer Detail Drawer -->
   <aside class="drawer" id="detail-drawer" aria-hidden="true">
@@ -695,5 +630,7 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
     </div>
   </aside>
 
+  <!-- App logic (ONLY ONCE) -->
+  <script src="l="app.js"></script>
 </body>
 </html>

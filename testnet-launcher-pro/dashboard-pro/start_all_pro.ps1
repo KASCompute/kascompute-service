@@ -15,26 +15,31 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
   exit
 }
 
-# Resolve script directory
+# Resolve script directory (CRITICAL)
 $ROOT = Split-Path -Parent $PSCommandPath
 
 Write-Host ""
-Write-Host "Starting KASCompute PRO (node + miner)..." -ForegroundColor Cyan
+Write-Host "Starting KASCOMPUTE PRO (node + miner)..." -ForegroundColor Cyan
+Write-Host "Working directory: $ROOT" -ForegroundColor DarkGray
 Write-Host ""
 
-# Start Node
-Start-Process pwsh -ArgumentList `
-  "-NoExit",
-  "-ExecutionPolicy", "Bypass",
-  "-File", "`"$ROOT\start_node_pro.ps1`""
+# --- Start Node ---
+Start-Process pwsh `
+  -WorkingDirectory $ROOT `
+  -ArgumentList `
+    "-NoExit",
+    "-ExecutionPolicy", "Bypass",
+    "-File", "`"$ROOT\start_node_pro.ps1`""
 
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 600
 
-# Start Miner
-Start-Process pwsh -ArgumentList `
-  "-NoExit",
-  "-ExecutionPolicy", "Bypass",
-  "-File", "`"$ROOT\start_miner_pro.ps1`""
+# --- Start Miner ---
+Start-Process pwsh `
+  -WorkingDirectory $ROOT `
+  -ArgumentList `
+    "-NoExit",
+    "-ExecutionPolicy", "Bypass",
+    "-File", "`"$ROOT\start_miner_pro.ps1`""
 
 Write-Host ""
 Write-Host "Node and miner launched in separate windows." -ForegroundColor Green

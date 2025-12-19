@@ -16,7 +16,7 @@ Write-Host ' | . \  / ___ \ ___) | |__| (_) | | | | | | |_) || ||  __/' -Foregro
 Write-Host ' |_|\_\/_/   \_\____/ \____\___/|_| |_| |_| .__/  \__\___|' -ForegroundColor Cyan
 Write-Host '                                          |_|              ' -ForegroundColor Cyan
 Write-Host ''
-Write-Host '            KASCompute - Miner Engine' -ForegroundColor DarkCyan
+Write-Host '            KASCOMPUTE - Miner Engine' -ForegroundColor DarkCyan
 Write-Host ''
 
 # ===============================
@@ -27,8 +27,12 @@ Write-Host ''
 . "$PSScriptRoot\identity.ps1"
 $IDENTITY = Initialize-Identity
 
+# ---- API_BASE (guardrails: trim + remove trailing slash) ----
+$API_BASE = $env:API_BASE
+if (-not $API_BASE) { $API_BASE = "http://127.0.0.1:8080" }
+$API_BASE = $API_BASE.Trim()
+if ($API_BASE.EndsWith("/")) { $API_BASE = $API_BASE.TrimEnd("/") }
 
-$API_BASE = $env:API_BASE; if (-not $API_BASE) { $API_BASE = "http://127.0.0.1:8080" }
 $NODE_ID  = $env:NODE_ID;  if (-not $NODE_ID)  { $NODE_ID  = "kct-node-001" }
 $PUBKEY   = $env:PUBLIC_KEY_HEX; if (-not $PUBKEY) { $PUBKEY = "deadbeef00112233445566778899aabb" }
 

@@ -1,3 +1,4 @@
+// KASCompute PRO Dashboard JS (FINAL)
 
 // ===== Explorer UI (HUD / Search / Drawer) =====
 let __lastNodes = [];
@@ -8,12 +9,21 @@ let __lastMining = null;
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
 }
-function formatTimestamp(unix){
+
+function formatTimestampFull(unix){
   if(!unix) return "–";
   const d = new Date(unix * 1000);
   if(Number.isNaN(d.getTime())) return "–";
   return d.toLocaleString();
 }
+
+function formatTimeOnly(unix){
+  if(!unix) return "–";
+  const d = new Date(unix * 1000);
+  if(Number.isNaN(d.getTime())) return "–";
+  return d.toLocaleTimeString(undefined, { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+}
+
 function fmt(v){
   if (v === null || v === undefined) return "–";
   if (typeof v === "number" && isFinite(v)) return v.toLocaleString();
@@ -23,12 +33,24 @@ function fmt(v){
 function initExplorerUI(){
   const input = document.getElementById("global-search");
   const clearBtn = document.getElementById("search-clear");
-  if (clearBtn) clearBtn.addEventListener("click", () => { if(input){ input.value=""; applySearch(""); input.focus(); }});
+
+  if (clearBtn) clearBtn.addEventListener("click", () => {
+    if(input){
+      input.value="";
+      applySearch("");
+      input.focus();
+    }
+  });
 
   if (input){
     input.addEventListener("input", () => applySearch(input.value));
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Escape"){ input.value=""; applySearch(""); input.blur(); closeDrawer(); }
+      if (e.key === "Escape"){
+        input.value="";
+        applySearch("");
+        input.blur();
+        closeDrawer();
+      }
     });
   }
 
@@ -43,8 +65,14 @@ function initExplorerUI(){
     copyBtn.addEventListener("click", async () => {
       const pre = document.getElementById("drawer-pre");
       const txt = pre ? pre.textContent : "";
-      try{ await navigator.clipboard.writeText(txt); copyBtn.textContent = "Copied"; setTimeout(()=>copyBtn.textContent="Copy JSON", 900); }
-      catch{ copyBtn.textContent = "Copy failed"; setTimeout(()=>copyBtn.textContent="Copy JSON", 900); }
+      try{
+        await navigator.clipboard.writeText(txt);
+        copyBtn.textContent = "Copied";
+        setTimeout(()=>copyBtn.textContent="Copy JSON", 900);
+      } catch {
+        copyBtn.textContent = "Copy failed";
+        setTimeout(()=>copyBtn.textContent="Copy JSON", 900);
+      }
     });
   }
 }
@@ -91,9 +119,12 @@ function applySearch(q){
       const filtered = (__lastNodes || []).filter(n => JSON.stringify(n).toLowerCase().includes(query));
       updateMapMarkers(filtered);
     } else {
-      setState('map-state','loading');
-    updateMapMarkers(__lastNodes);
-    if(Array.isArray(__lastNodes) && __lastNodes.length>0){ setState('map-state','hidden'); } else { setState('map-state','empty'); }
+      updateMapMarkers(__lastNodes);
+      if(Array.isArray(__lastNodes) && __lastNodes.length>0){
+        setState('map-state','hidden');
+      } else {
+        setState('map-state','empty');
+      }
     }
   }
 }
@@ -122,7 +153,7 @@ function openDrawer(kind, title, obj){
     if (kind === "NODE"){
       add("node_id", obj?.node_id ?? "–");
       add("public_key", obj?.public_key_hex ?? "–");
-      add("last_seen", formatTimestamp(obj?.last_seen_unix));
+      add("last_seen", formatTimestampFull(obj?.last_seen_unix));
       add("country", obj?.country ?? "–");
       add("geo", (typeof obj?.latitude==="number" && typeof obj?.longitude==="number") ? `${obj.latitude.toFixed(4)}, ${obj.longitude.toFixed(4)}` : "pseudo");
     } else if (kind === "JOB"){
@@ -130,15 +161,15 @@ function openDrawer(kind, title, obj){
       add("status", obj?.status ?? "–");
       add("assigned_node", obj?.assigned_node ?? "–");
       add("work_units", obj?.work_units ?? 0);
-      add("created", formatTimestamp(obj?.created_unix));
-      add("updated", formatTimestamp(obj?.updated_unix));
+      add("created", formatTimestampFull(obj?.created_unix));
+      add("updated", formatTimestampFull(obj?.updated_unix));
     } else if (kind === "MINER"){
       add("rank", obj?.rank ?? "–");
       add("node_id", obj?.node_id ?? "–");
-      add("share", obj?.share ?? "–");
-      add("hashrate", obj?.hashrate ?? "–");
+      add("hashrate_share", obj?.hashrate_share ?? obj?.share ?? "–");
+      add("mined_kct", obj?.total_mined_nano ? nanoToKct(Number(obj.total_mined_nano)).toFixed(4) : "–");
     } else {
-      Object.entries(obj || {}).slice(0, 10).forEach(([k,v]) => add(k, v));
+      Object.entries(obj || {}).slice(0, 12).forEach(([k,v]) => add(k, v));
     }
   }
 
@@ -193,10 +224,6 @@ function wireRowClicks(){
     });
   }
 }
-// ===== /Explorer UI =====
-
-
-// KASCompute PRO Dashboard JS
 
 // API base from <body data-api-base="...">, fallback = same-origin
 const API_BASE = document.body?.dataset?.apiBase?.trim() || "";
@@ -212,15 +239,20 @@ let rewardChart = null;
 window.addEventListener("DOMContentLoaded", () => {
   initNavigation();
   try{ initMap(); }catch(e){ console.warn("Map init failed", e); }
-initKaspaTicker();
+
+  initKaspaTicker();
   wireButtons();
   initExplorerUI();
   initInstanceInfo();
+
   updateNodesCountUI();
   setInterval(updateNodesCountUI, 5000);
+
   initQuickstart();
   refreshHealth();
   setInterval(refreshHealth, 8000);
+
+  wireRowClicks();
 
   refreshAll();
   setInterval(refreshAll, 10_000);
@@ -265,9 +297,7 @@ function wireButtons() {
   const walletBtn = document.getElementById("wallet-btn");
   if (walletBtn) {
     walletBtn.addEventListener("click", () => {
-      alert(
-        "Kaspa / Kasplex wallet integration will be wired into this testnet dashboard in a later PRO iteration."
-      );
+      alert("Kaspa / Kasplex wallet integration will be wired into this testnet dashboard in a later PRO iteration.");
     });
   }
 }
@@ -282,9 +312,7 @@ async function fetchKaspaPrice() {
   if (!el) return;
 
   try {
-    const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=kaspa&vs_currencies=usd"
-    );
+    const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=kaspa&vs_currencies=usd");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const price = data?.kaspa?.usd;
@@ -294,32 +322,45 @@ async function fetchKaspaPrice() {
   }
 }
 
+// ===== Data refresh =====
 async function refreshAll() {
   try {
     const [mining, jobsSummary, jobs, nodes, proofs] = await Promise.all([
-      fetchJson("/mining"),
-      fetchJson("/jobs/summary"),
-      fetchJson("/jobs"),
-      fetchJson("/nodes"),
-      fetchJson("/proofs"),
+      fetchJson("/api/mining"),
+      fetchJson("/api/jobs/summary"),
+      fetchJson("/api/jobs"),
+      fetchJson("/api/nodes"),
+      fetchJson("/api/proofs"),
     ]);
 
+    __lastMining = mining;
+    __lastJobsSummary = jobsSummary;
+    __lastJobs = Array.isArray(jobs) ? jobs : [];
+    __lastNodes = Array.isArray(nodes) ? nodes : [];
+
     updateMiningHero(mining, jobsSummary, nodes);
-    updateRewardChart(mining);
-    setState('nodes-state','loading');
+    setHud(mining, jobsSummary, nodes);
+
+    if (typeof window.Chart !== "undefined") {
+      updateRewardChart(mining);
+    }
+
     updateNodesSection(nodes);
-    updateStateForArray('nodes-state', nodes);
     updateMinersSection(mining);
     updateJobsSection(jobsSummary, jobs);
     updateProofTerminal(proofs);
     updateMapMarkers(nodes);
+
+    wireRowClicks();
+    applyDeepLink();
+
   } catch (e) {
     console.error("[refresh] failed", e);
   }
 }
 
 async function fetchJson(path) {
-  const res = await fetch(API_BASE + path);
+  const res = await fetch(API_BASE + path, { cache: "no-store" });
   if (!res.ok) throw new Error("HTTP " + res.status + " for " + path);
   return res.json();
 }
@@ -336,16 +377,6 @@ function formatKct(nano, decimals = 3) {
 function formatPct(v, decimals = 1) {
   if (typeof v !== "number") return "0.0";
   return v.toFixed(decimals);
-}
-
-function formatTimestamp(unix) {
-  if (!unix) return "–";
-  const d = new Date(unix * 1000);
-  return d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 function shorten(str, keep = 8) {
@@ -368,8 +399,8 @@ function updateMiningHero(mining, jobsSummary, nodes) {
   const topMinerEl = document.getElementById("h-top-miner");
   const topMinerShareEl = document.getElementById("h-top-miner-share");
 
-  if (bh) bh.textContent = mining.block_height;
-  if (mi) mi.textContent = `Month index ${mining.month_index} • Block time 60s`;
+  if (bh) bh.textContent = mining.block_height ?? "–";
+  if (mi) mi.textContent = `Month index ${mining.month_index ?? "–"} • Block time 60s`;
 
   if (br) br.textContent = `${Number(mining.current_block_reward_kct ?? 0).toFixed(3)} KCT`;
   if (brn) brn.textContent = `${Number(mining.current_block_reward_nano ?? 0).toLocaleString()} nanoKCT`;
@@ -380,13 +411,11 @@ function updateMiningHero(mining, jobsSummary, nodes) {
   if (nodeCountEl) nodeCountEl.textContent = Array.isArray(nodes) ? nodes.length : 0;
 
   if (jobsSummary && jobsSumEl) {
-    jobsSumEl.textContent = `${jobsSummary.pending} / ${jobsSummary.running} / ${jobsSummary.completed}`;
+    jobsSumEl.textContent = `${jobsSummary.pending ?? 0} / ${jobsSummary.running ?? 0} / ${jobsSummary.completed ?? 0}`;
   }
 
   if (topMinerEl && topMinerShareEl && Array.isArray(mining.per_node)) {
-    const sorted = [...mining.per_node].sort(
-      (a, b) => (b.total_mined_nano ?? 0) - (a.total_mined_nano ?? 0)
-    );
+    const sorted = [...mining.per_node].sort((a, b) => (b.total_mined_nano ?? 0) - (a.total_mined_nano ?? 0));
     const top = sorted[0];
     if (top) {
       topMinerEl.textContent = top.node_id ?? "–";
@@ -402,13 +431,12 @@ function updateMiningHero(mining, jobsSummary, nodes) {
 function updateRewardChart(mining) {
   if (!mining || !Array.isArray(mining.per_node)) return;
 
-  const ctx = document.getElementById("chart-reward-distribution")?.getContext("2d");
+  const canvas = document.getElementById("chart-reward-distribution");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const nodes = [...mining.per_node].sort(
-    (a, b) => (b.total_mined_nano ?? 0) - (a.total_mined_nano ?? 0)
-  );
-
+  const nodes = [...mining.per_node].sort((a, b) => (b.total_mined_nano ?? 0) - (a.total_mined_nano ?? 0));
   const labels = nodes.map((n) => n.node_id ?? "unknown");
   const data = nodes.map((n) => nanoToKct(Number(n.total_mined_nano ?? 0)));
 
@@ -457,9 +485,9 @@ function updateNodesSection(nodes) {
       tr.dataset.nodeId = String(node.node_id ?? "");
       tr.innerHTML = `
         <td>${idx + 1}</td>
-        <td><span class="node-dot ${nodeOnlineClass(node.last_seen_unix)}"></span>${node.node_id ?? "–"}</td>
-        <td>${shorten(node.public_key_hex ?? "", 10)}</td>
-        <td>${formatTimestamp(node.last_seen_unix)}</td>
+        <td><span class="node-dot ${nodeOnlineClass(node.last_seen_unix)}"></span>${escapeHtml(node.node_id ?? "–")}</td>
+        <td>${escapeHtml(shorten(node.public_key_hex ?? "", 10))}</td>
+        <td>${escapeHtml(formatTimestampFull(node.last_seen_unix))}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -468,7 +496,6 @@ function updateNodesSection(nodes) {
 // Map init
 function initMap(){
   if (typeof window.L === "undefined") { console.warn("Leaflet (L) not loaded — map disabled."); return; }
-
   const mapEl = document.getElementById("node-map");
   if (!mapEl) return;
 
@@ -482,12 +509,17 @@ function initMap(){
   nodeLayer = L.layerGroup().addTo(nodeMap);
 }
 
-// ✅ real Geo if provided by backend; otherwise fallback pseudo point
+// Geo + fallback
 function updateMapMarkers(nodes) {
   if (!nodeMap || !nodeLayer) return;
 
   const arr = Array.isArray(nodes) ? nodes : [];
   nodeLayer.clearLayers();
+
+  if (arr.length === 0){
+    setState("map-state","empty");
+    return;
+  }
 
   arr.forEach((node) => {
     const hasReal =
@@ -509,12 +541,14 @@ function updateMapMarkers(nodes) {
     }).bindPopup(
       `<strong>${escapeHtml(String(node.node_id ?? "–"))}</strong><br/>
        Country: ${escapeHtml(String(node.country ?? "–"))}<br/>
-       Last seen: ${escapeHtml(formatTimestamp(node.last_seen_unix))}<br/>
+       Last seen: ${escapeHtml(formatTimestampFull(node.last_seen_unix))}<br/>
        Geo: ${hasReal ? "GeoIP" : "fallback"}`
     );
 
     nodeLayer.addLayer(marker);
   });
+
+  setState("map-state","hidden");
 }
 
 function pseudoCoordsFromId(id) {
@@ -524,15 +558,6 @@ function pseudoCoordsFromId(id) {
   const lonSeed = (h / 31) >>> 0;
   const lon = ((lonSeed % 720) - 360) * 0.5;
   return { lat, lon };
-}
-
-function escapeHtml(str) {
-  return str
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 // Mining tables
@@ -552,9 +577,11 @@ function updateMinersSection(mining) {
 
   sorted.forEach((n, idx) => {
     const tr1 = document.createElement("tr");
+    tr1.dataset.rank = String(idx + 1);
+    tr1.__minerObj = { ...n, rank: idx + 1 };
     tr1.innerHTML = `
       <td>${idx + 1}</td>
-      <td>${n.node_id ?? "–"}</td>
+      <td>${escapeHtml(n.node_id ?? "–")}</td>
       <td>${formatKct(Number(n.total_mined_nano ?? 0), 4)}</td>
       <td>${formatKct(Number(n.last_block_reward_nano ?? 0), 4)}</td>
       <td>${formatPct(Number(n.hashrate_share ?? 0), 2)} %</td>
@@ -564,7 +591,7 @@ function updateMinersSection(mining) {
     const tr2 = document.createElement("tr");
     tr2.innerHTML = `
       <td>${idx + 1}</td>
-      <td>${n.node_id ?? "–"}</td>
+      <td>${escapeHtml(n.node_id ?? "–")}</td>
       <td>${Number(n.cumulative_work_units ?? 0).toLocaleString()}</td>
       <td>${formatKct(Number(n.total_mined_nano ?? 0), 4)}</td>
     `;
@@ -600,11 +627,11 @@ function updateJobsSection(summary, jobs) {
       tr.dataset.jobId = String(job.id ?? "");
       tr.innerHTML = `
         <td>${job.id ?? "–"}</td>
-        <td>${job.status ?? "–"}</td>
-        <td>${job.assigned_node ?? "–"}</td>
+        <td>${escapeHtml(job.status ?? "–")}</td>
+        <td>${escapeHtml(job.assigned_node ?? "–")}</td>
         <td>${Number(job.work_units ?? 0).toLocaleString()}</td>
-        <td>${formatTimestamp(job.created_unix)}</td>
-        <td>${formatTimestamp(job.updated_unix)}</td>
+        <td>${escapeHtml(formatTimestampFull(job.created_unix))}</td>
+        <td>${escapeHtml(formatTimestampFull(job.updated_unix))}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -616,8 +643,7 @@ function updateProofTerminal(proofs) {
   if (!term) return;
 
   if (!Array.isArray(proofs) || proofs.length === 0) {
-    term.innerHTML =
-      '<div class="terminal-line muted">Waiting for proofs... start a miner to see activity.</div>';
+    term.innerHTML = '<div class="terminal-line muted">Waiting for proofs... start a miner to see activity.</div>';
     return;
   }
 
@@ -632,7 +658,7 @@ function updateProofTerminal(proofs) {
     const div = document.createElement("div");
     div.className = "terminal-line";
     div.innerHTML = `
-      <span class="ts">[${formatTimestamp(p.timestamp_unix)}]</span>
+      <span class="ts">[${escapeHtml(formatTimeOnly(p.timestamp_unix))}]</span>
       <span> • </span>
       <span class="node">${escapeHtml(String(p.node_id ?? "–"))}</span>
       <span> completed </span>
@@ -644,11 +670,11 @@ function updateProofTerminal(proofs) {
   });
 }
 
-
+// ===== Health =====
 async function pingEndpoint(url){
   const t0 = performance.now();
   try{
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(API_BASE + url, { cache: "no-store" });
     const ms = Math.round(performance.now() - t0);
     return { ok: res.ok, status: res.status, ms };
   }catch(err){
@@ -682,13 +708,11 @@ async function refreshHealth(){
   const dot = document.getElementById("api-dot");
   const badge = document.getElementById("api-live");
 
-  // Use your existing endpoints
   const pRoot = await pingEndpoint("/api/health").catch(()=>null);
   const pNodes = await pingEndpoint("/api/nodes");
   const pJobs = await pingEndpoint("/api/jobs");
   const pMining = await pingEndpoint("/api/mining");
 
-  // If /api/health isn't present, treat API as up if any endpoint is up
   const apiOk = (pRoot && pRoot.ok) || pNodes.ok || pJobs.ok || pMining.ok;
   const apiMs = (pRoot && isFinite(pRoot.ms)) ? pRoot.ms : Math.min(pNodes.ms, pJobs.ms, pMining.ms);
 
@@ -711,13 +735,14 @@ async function refreshHealth(){
   }
 }
 
+// ===== Quickstart =====
 function initQuickstart(){
   const btn = document.getElementById("copy-quickstart");
-  const pre = document.getElementById("quickstart-code");
-  if (btn && pre){
+  const code = document.getElementById("quickstart-code");
+  if (btn && code){
     btn.addEventListener("click", async ()=>{
       try{
-        await navigator.clipboard.writeText(pre.textContent || "");
+        await navigator.clipboard.writeText(code.textContent || "");
         btn.textContent = "Copied";
         setTimeout(()=>btn.textContent="Copy", 900);
       }catch{
@@ -730,15 +755,15 @@ function initQuickstart(){
   const open = document.getElementById("open-downloads");
   if (open){
     open.addEventListener("click", ()=>{
-      // Try switch to "Mode & Downloads" tab/section if your nav uses buttons.
-      const btn = Array.from(document.querySelectorAll(".nav-link")).find(b => (b.textContent||"").toLowerCase().includes("mode") || (b.textContent||"").toLowerCase().includes("download"));
-      if (btn) btn.click();
-      // Also scroll a bit
+      const howBtn = Array.from(document.querySelectorAll(".nav-link"))
+        .find(b => (b.textContent||"").toLowerCase().includes("how"));
+      if (howBtn) howBtn.click();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 }
 
+// ===== Deep link =====
 function applyDeepLink(){
   const params = new URLSearchParams(window.location.search);
   const node = params.get("node");
@@ -752,39 +777,36 @@ function applyDeepLink(){
   }
 }
 
-
-
+// ===== UI states =====
 function setState(id, mode){
   const el = document.getElementById(id);
   if(!el) return;
   el.classList.remove("hidden","loading","empty","error");
   if(mode === "hidden"){ el.classList.add("hidden"); return; }
   el.classList.add(mode);
-  el.querySelector && el.querySelector(".dot");
 }
 
-function updateStateForArray(stateId, arr){
-  if(!Array.isArray(arr)) { setState(stateId, "error"); return; }
-  if(arr.length === 0){ setState(stateId, "empty"); return; }
-  setState(stateId, "hidden");
-}
-
-
+// ===== Instance info =====
 function getApiBase(){
   const b = document.body;
   const v = b ? b.getAttribute("data-api-base") : "";
   return (v && v.trim().length) ? v.trim() : "";
 }
 
+function getRenderBase(){
+  const b = document.body;
+  const v = b ? b.getAttribute("data-render-base") : "";
+  return (v && v.trim().length) ? v.trim() : "https://kascompute-testnet.onrender.com";
+}
+
 function initInstanceInfo(){
   const proto = window.location.protocol;
   const host = window.location.host || "local-file";
   const apiBase = getApiBase();
-    const hostname = window.location.hostname || "";
+  const hostname = window.location.hostname || "";
   const isFile = (proto === "file:");
   const isLoopback = (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0");
   const isPrivateIp = (() => {
-    // 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0 - 172.31.0.0
     const m = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
     if (!m) return false;
     const a = Number(m[1]), b = Number(m[2]);
@@ -795,22 +817,15 @@ function initInstanceInfo(){
   })();
   const isLocal = (isFile || isLoopback || isPrivateIp);
 
-  const pill = document.getElementById("instance-pill");
-  const meta = document.getElementById("instance-meta");
-  const badge = document.getElementById("instance-badge");
-  const text = document.getElementById("instance-text");
-
   const isRender = (!isLocal && host.includes("onrender.com"));
   const label = isLocal ? "LOCAL" : (isRender ? "RENDER" : "LIVE");
   const apiFull = (apiBase && apiBase.length) ? apiBase : `${proto}//${host}`;
 
-  if (pill){
-    pill.textContent = label;
-    pill.classList.toggle("local", isLocal);
-  }
-  if (meta){
-    meta.textContent = `Host: ${host} • API: ${apiFull}`;
-  }
+  const badge = document.getElementById("instance-badge");
+  const text = document.getElementById("instance-text");
+  const banner = document.getElementById("instance-banner");
+
+  if (banner) banner.style.display = "";
   if (badge){
     badge.textContent = label;
     badge.classList.toggle("live", !isLocal);
@@ -837,6 +852,14 @@ function initInstanceInfo(){
       }
     });
   }
+
+  const switchBtn = document.getElementById("switch-instance");
+  if (switchBtn){
+    const renderBase = getRenderBase();
+    switchBtn.addEventListener("click", ()=>{
+      window.open(`${renderBase}/dashboard/`, "_blank");
+    });
+  }
 }
 
 function nodeOnlineClass(lastSeenUnix){
@@ -849,13 +872,7 @@ function nodeOnlineClass(lastSeenUnix){
   return "offline";
 }
 
-
-function getRenderBase(){
-  const b = document.body;
-  const v = b ? b.getAttribute("data-render-base") : "";
-  return (v && v.trim().length) ? v.trim() : "https://kascompute-testnet.onrender.com";
-}
-
+// ===== Nodes count pill + banner =====
 async function updateNodesCountUI(){
   try{
     const apiBase = getApiBase();
@@ -877,7 +894,7 @@ async function updateNodesCountUI(){
     const banner = document.getElementById("nodes-banner-count");
     if (banner) banner.innerHTML = `Nodes <strong>${online}</strong> / ${total} • online ≤90s`;
 
-  }catch(e){
+  } catch {
     const pill = document.getElementById("nodes-pill-count");
     if (pill) pill.textContent = `—/—`;
     const banner = document.getElementById("nodes-banner-count");
