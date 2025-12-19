@@ -10,12 +10,14 @@
   <link
     rel="stylesheet"
     href="style.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
   />
 
   <!-- Styles -->
   <link rel="stylesheet" href="style.css" />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 
 <!-- IMPORTANT:
@@ -23,7 +25,7 @@
   - Render (backend same origin): data-api-base=""
   - Render (backend separate):    data-api-base="https://kascompute-testnet.onrender.com"
 -->
-<body data-api-base="">
+<body data-api-base="" data-render-base="https://kascompute-testnet.onrender.com">
 
 
   <div class="app-shell">
@@ -65,7 +67,7 @@
           <div class="commandbar">
             <div class="hud-chips" aria-label="Live status">
               <span class="chip chip-live" id="hud-live"><span class="live-dot"></span>LIVE</span>
-              <span class="chip"><span class="chip-k">NODES</span><span class="chip-v" id="hud-nodes">–</span></span>
+              <span class="chip"><span class="chip-k">NODES <span class="pill-count" id="nodes-pill-count">–/–</span></span><span class="chip-v" id="hud-nodes">–</span></span>
               <span class="chip"><span class="chip-k">JOBS</span><span class="chip-v" id="hud-jobs">–</span></span>
               <span class="chip"><span class="chip-k">HEIGHT</span><span class="chip-v" id="hud-height">–</span></span>
             </div>
@@ -95,10 +97,11 @@
     <div class="instance-banner-inner">
       <div class="instance-banner-left">
         <span class="instance-badge" id="instance-badge">—</span>
-        <span class="instance-text" id="instance-text">—</span>
+        <span class="instance-text" id="instance-text">—</span> <span class="instance-count" id="nodes-banner-count">—</span>
       </div>
       <div class="instance-banner-actions">
         <button class="btn btn-ghost" id="copy-instance" type="button">Copy API Base</button>
+        <button class="btn btn-ghost" id="switch-instance" type="button">Open Render</button>
       </div>
     </div>
   </div>
@@ -422,7 +425,6 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
                 src="https://kgi.kaspad.net/"
                 title="Kaspa Graph Inspector"
                 loading="lazy"
-                referrerpolicy="no-referrer"
               ></iframe>
             </div>
 
@@ -659,8 +661,6 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
   <!-- Leaflet JS -->
   <script
     src="app.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
   ></script>
 
   <!-- Chart.js -->

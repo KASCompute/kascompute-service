@@ -505,3 +505,28 @@ body::after{content:"";position:fixed;inset:-40px 0 0 0;pointer-events:none;opac
   background: rgba(251,191,36,.95);
   box-shadow: 0 0 14px rgba(251,191,36,.45);
 }
+
+/* ===== Counts ===== */
+.pill-count{
+  margin-left:10px;
+  padding:3px 8px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.14);
+  background: rgba(2,6,23,.32);
+  font-family: var(--mono);
+  font-size:.68rem;
+  letter-spacing:.14em;
+  color: rgba(226,232,240,.92);
+}
+.instance-count{
+  margin-left:10px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.14);
+  background: rgba(2,6,23,.30);
+  font-family: var(--mono);
+  font-size:.72rem;
+  letter-spacing:.12em;
+  color: rgba(226,232,240,.92);
+}
+.instance-count strong{color: rgba(0,227,192,.95); font-weight:700}

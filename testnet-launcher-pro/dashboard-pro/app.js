@@ -211,11 +211,13 @@ let rewardChart = null;
 
 window.addEventListener("DOMContentLoaded", () => {
   initNavigation();
-  initMap();
-  initKaspaTicker();
+  try{ initMap(); }catch(e){ console.warn("Map init failed", e); }
+initKaspaTicker();
   wireButtons();
   initExplorerUI();
   initInstanceInfo();
+  updateNodesCountUI();
+  setInterval(updateNodesCountUI, 5000);
   initQuickstart();
   refreshHealth();
   setInterval(refreshHealth, 8000);
@@ -464,7 +466,9 @@ function updateNodesSection(nodes) {
 }
 
 // Map init
-function initMap() {
+function initMap(){
+  if (typeof window.L === "undefined") { console.warn("Leaflet (L) not loaded — map disabled."); return; }
+
   const mapEl = document.getElementById("node-map");
   if (!mapEl) return;
 
@@ -843,4 +847,40 @@ function nodeOnlineClass(lastSeenUnix){
   if (age <= 90) return "online";
   if (age <= 180) return "warn";
   return "offline";
+}
+
+
+function getRenderBase(){
+  const b = document.body;
+  const v = b ? b.getAttribute("data-render-base") : "";
+  return (v && v.trim().length) ? v.trim() : "https://kascompute-testnet.onrender.com";
+}
+
+async function updateNodesCountUI(){
+  try{
+    const apiBase = getApiBase();
+    const url = (apiBase && apiBase.length) ? `${apiBase}/api/nodes` : `/api/nodes`;
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(`nodes_http_${r.status}`);
+    const nodes = await r.json();
+
+    const now = Math.floor(Date.now()/1000);
+    const total = Array.isArray(nodes) ? nodes.length : 0;
+    const online = Array.isArray(nodes) ? nodes.filter(n=>{
+      const t = Number(n?.last_seen_unix || 0);
+      return t > 0 && (now - t) <= 90;
+    }).length : 0;
+
+    const pill = document.getElementById("nodes-pill-count");
+    if (pill) pill.textContent = `${online}/${total}`;
+
+    const banner = document.getElementById("nodes-banner-count");
+    if (banner) banner.innerHTML = `Nodes <strong>${online}</strong> / ${total} • online ≤90s`;
+
+  }catch(e){
+    const pill = document.getElementById("nodes-pill-count");
+    if (pill) pill.textContent = `—/—`;
+    const banner = document.getElementById("nodes-banner-count");
+    if (banner) banner.textContent = `Nodes —`;
+  }
 }
