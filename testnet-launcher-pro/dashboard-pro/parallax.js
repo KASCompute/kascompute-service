@@ -1,41 +1,56 @@
-// KASCompute PRO – UI Motion Engine
+// KASCompute PRO — subtle parallax + sidebar glow tracker
+(() => {
+  const root = document.documentElement;
 
-document.addEventListener("DOMContentLoaded", () => {
-  // 3D CARD PARALLAX
-  const cards = document.querySelectorAll(".card");
+  // Sidebar glow follows scroll position (works with sticky sidebar)
+  const updateGlow = () => {
+    const scroller = document.scrollingElement || document.documentElement;
+    const y = scroller.scrollTop;
+    const h = Math.max(1, scroller.scrollHeight - scroller.clientHeight);
+    const pct = (y / h) * 100;
+    root.style.setProperty("--glow-y", `${pct}%`);
+  };
 
-  cards.forEach((card) => {
-    card.addEventListener("mousemove", (e) => {
-      const rect = card.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+  // Card parallax on hover (very light, safe)
+  const cards = () => Array.from(document.querySelectorAll(".card"));
+  let raf = null;
 
-      const midX = rect.width / 2;
-      const midY = rect.height / 2;
+  const onMove = (e) => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      const cx = e.clientX;
+      const cy = e.clientY;
 
-      const rotateX = ((y - midY) / midY) * 4;
-      const rotateY = ((x - midX) / midX) * -4;
+      cards().forEach((card) => {
+        const r = card.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return;
 
-      card.style.transform = `
-        perspective(900px)
-        rotateX(${rotateX}deg)
-        rotateY(${rotateY}deg)
-        translateY(-2px)
-      `;
+        // Only when pointer is inside card
+        const inside = cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+        if (!inside) {
+          card.style.transform = "";
+          return;
+        }
+
+        const dx = (cx - (r.left + r.width / 2)) / (r.width / 2);
+        const dy = (cy - (r.top + r.height / 2)) / (r.height / 2);
+
+        const tiltX = (-dy * 2.2).toFixed(2);
+        const tiltY = (dx * 2.6).toFixed(2);
+
+        card.style.transform = `perspective(900px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateZ(0)`;
+      });
     });
+  };
 
-    card.addEventListener("mouseleave", () => {
-      card.style.transform = "perspective(900px) rotateX(0deg) rotateY(0deg)";
-    });
-  });
+  const onLeave = () => {
+    cards().forEach((c) => (c.style.transform = ""));
+  };
 
-  // SIDEBAR GLOW FOLLOW (optional, if your CSS uses --glow-y)
-  const sidebar = document.querySelector(".sidebar");
-  if (sidebar) {
-    sidebar.addEventListener("mousemove", (e) => {
-      const rect = sidebar.getBoundingClientRect();
-      const y = e.clientY - rect.top;
-      sidebar.style.setProperty("--glow-y", `${y}px`);
-    });
-  }
-});
+  window.addEventListener("scroll", updateGlow, { passive: true });
+  window.addEventListener("resize", updateGlow);
+  window.addEventListener("mousemove", onMove, { passive: true });
+  window.addEventListener("mouseleave", onLeave);
+
+  updateGlow();
+})();

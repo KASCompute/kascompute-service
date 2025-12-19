@@ -1,3 +1,201 @@
+
+// ===== Explorer UI (HUD / Search / Drawer) =====
+let __lastNodes = [];
+let __lastJobs = [];
+let __lastJobsSummary = null;
+let __lastMining = null;
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
+}
+function formatTimestamp(unix){
+  if(!unix) return "–";
+  const d = new Date(unix * 1000);
+  if(Number.isNaN(d.getTime())) return "–";
+  return d.toLocaleString();
+}
+function fmt(v){
+  if (v === null || v === undefined) return "–";
+  if (typeof v === "number" && isFinite(v)) return v.toLocaleString();
+  return String(v);
+}
+
+function initExplorerUI(){
+  const input = document.getElementById("global-search");
+  const clearBtn = document.getElementById("search-clear");
+  if (clearBtn) clearBtn.addEventListener("click", () => { if(input){ input.value=""; applySearch(""); input.focus(); }});
+
+  if (input){
+    input.addEventListener("input", () => applySearch(input.value));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape"){ input.value=""; applySearch(""); input.blur(); closeDrawer(); }
+    });
+  }
+
+  const closeBtn = document.getElementById("drawer-close");
+  const backdrop = document.getElementById("drawer-backdrop");
+  if (closeBtn) closeBtn.addEventListener("click", closeDrawer);
+  if (backdrop) backdrop.addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", (e) => { if(e.key==="Escape") closeDrawer(); });
+
+  const copyBtn = document.getElementById("drawer-copy");
+  if (copyBtn){
+    copyBtn.addEventListener("click", async () => {
+      const pre = document.getElementById("drawer-pre");
+      const txt = pre ? pre.textContent : "";
+      try{ await navigator.clipboard.writeText(txt); copyBtn.textContent = "Copied"; setTimeout(()=>copyBtn.textContent="Copy JSON", 900); }
+      catch{ copyBtn.textContent = "Copy failed"; setTimeout(()=>copyBtn.textContent="Copy JSON", 900); }
+    });
+  }
+}
+
+function setHud(mining, jobsSummary, nodes){
+  const nodesCount = Array.isArray(nodes) ? nodes.length : 0;
+  const jobsTotal = jobsSummary?.total ?? (Array.isArray(__lastJobs) ? __lastJobs.length : 0);
+  const height = mining?.block_height ?? mining?.height ?? "–";
+
+  const n = document.getElementById("hud-nodes");
+  const j = document.getElementById("hud-jobs");
+  const h = document.getElementById("hud-height");
+  if (n) n.textContent = fmt(nodesCount);
+  if (j) j.textContent = fmt(jobsTotal);
+  if (h) h.textContent = fmt(height);
+}
+
+function applySearch(q){
+  const query = String(q||"").trim().toLowerCase();
+
+  const filterRows = (tbodySel) => {
+    const rows = Array.from(document.querySelectorAll(`${tbodySel} tr`));
+    rows.forEach(tr => {
+      const text = tr.textContent.toLowerCase();
+      tr.classList.toggle("hidden", query && !text.includes(query));
+    });
+  };
+
+  filterRows("#nodes-table-body");
+  filterRows("#jobs-table-body");
+  filterRows("#miners-table-body");
+
+  const term = document.getElementById("proof-terminal");
+  if (term){
+    const lines = Array.from(term.children);
+    lines.forEach(line => {
+      const text = line.textContent.toLowerCase();
+      line.style.display = (query && !text.includes(query)) ? "none" : "";
+    });
+  }
+
+  if (typeof updateMapMarkers === "function"){
+    if (query){
+      const filtered = (__lastNodes || []).filter(n => JSON.stringify(n).toLowerCase().includes(query));
+      updateMapMarkers(filtered);
+    } else {
+      setState('map-state','loading');
+    updateMapMarkers(__lastNodes);
+    if(Array.isArray(__lastNodes) && __lastNodes.length>0){ setState('map-state','hidden'); } else { setState('map-state','empty'); }
+    }
+  }
+}
+
+function openDrawer(kind, title, obj){
+  const drawer = document.getElementById("detail-drawer");
+  if (!drawer) return;
+  drawer.classList.add("open");
+  drawer.setAttribute("aria-hidden", "false");
+
+  const kicker = document.getElementById("drawer-kicker");
+  const name = document.getElementById("drawer-name");
+  if (kicker) kicker.textContent = (kind || "DETAILS").toUpperCase();
+  if (name) name.textContent = title || "—";
+
+  const grid = document.getElementById("drawer-grid");
+  if (grid){
+    grid.innerHTML = "";
+    const add = (k,v) => {
+      const el = document.createElement("div");
+      el.className = "kv";
+      el.innerHTML = `<div class="k">${escapeHtml(String(k))}</div><div class="v">${escapeHtml(String(v))}</div>`;
+      grid.appendChild(el);
+    };
+
+    if (kind === "NODE"){
+      add("node_id", obj?.node_id ?? "–");
+      add("public_key", obj?.public_key_hex ?? "–");
+      add("last_seen", formatTimestamp(obj?.last_seen_unix));
+      add("country", obj?.country ?? "–");
+      add("geo", (typeof obj?.latitude==="number" && typeof obj?.longitude==="number") ? `${obj.latitude.toFixed(4)}, ${obj.longitude.toFixed(4)}` : "pseudo");
+    } else if (kind === "JOB"){
+      add("id", obj?.id ?? "–");
+      add("status", obj?.status ?? "–");
+      add("assigned_node", obj?.assigned_node ?? "–");
+      add("work_units", obj?.work_units ?? 0);
+      add("created", formatTimestamp(obj?.created_unix));
+      add("updated", formatTimestamp(obj?.updated_unix));
+    } else if (kind === "MINER"){
+      add("rank", obj?.rank ?? "–");
+      add("node_id", obj?.node_id ?? "–");
+      add("share", obj?.share ?? "–");
+      add("hashrate", obj?.hashrate ?? "–");
+    } else {
+      Object.entries(obj || {}).slice(0, 10).forEach(([k,v]) => add(k, v));
+    }
+  }
+
+  const pre = document.getElementById("drawer-pre");
+  if (pre){
+    try{ pre.textContent = JSON.stringify(obj ?? {}, null, 2); }
+    catch{ pre.textContent = String(obj ?? ""); }
+  }
+}
+
+function closeDrawer(){
+  const drawer = document.getElementById("detail-drawer");
+  if (!drawer) return;
+  drawer.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+}
+
+function wireRowClicks(){
+  const nt = document.getElementById("nodes-table-body");
+  if (nt && !nt.dataset.wired){
+    nt.dataset.wired = "1";
+    nt.addEventListener("click", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      const id = tr.dataset.nodeId;
+      const obj = (__lastNodes || []).find(n => String(n.node_id ?? "") === String(id));
+      if (obj) openDrawer("NODE", String(obj.node_id ?? "NODE"), obj);
+    });
+  }
+
+  const jt = document.getElementById("jobs-table-body");
+  if (jt && !jt.dataset.wired){
+    jt.dataset.wired = "1";
+    jt.addEventListener("click", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      const id = tr.dataset.jobId;
+      const obj = (__lastJobs || []).find(j => String(j.id ?? "") === String(id));
+      if (obj) openDrawer("JOB", `JOB ${obj.id ?? "—"}`, obj);
+    });
+  }
+
+  const mt = document.getElementById("miners-table-body");
+  if (mt && !mt.dataset.wired){
+    mt.dataset.wired = "1";
+    mt.addEventListener("click", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      const obj = tr.__minerObj;
+      const rank = tr.dataset.rank || "–";
+      if (obj) openDrawer("MINER", `MINER #${rank}`, obj);
+    });
+  }
+}
+// ===== /Explorer UI =====
+
+
 // KASCompute PRO Dashboard JS
 
 // API base from <body data-api-base="...">, fallback = same-origin
@@ -16,6 +214,11 @@ window.addEventListener("DOMContentLoaded", () => {
   initMap();
   initKaspaTicker();
   wireButtons();
+  initExplorerUI();
+  initInstanceInfo();
+  initQuickstart();
+  refreshHealth();
+  setInterval(refreshHealth, 8000);
 
   refreshAll();
   setInterval(refreshAll, 10_000);
@@ -101,7 +304,9 @@ async function refreshAll() {
 
     updateMiningHero(mining, jobsSummary, nodes);
     updateRewardChart(mining);
+    setState('nodes-state','loading');
     updateNodesSection(nodes);
+    updateStateForArray('nodes-state', nodes);
     updateMinersSection(mining);
     updateJobsSection(jobsSummary, jobs);
     updateProofTerminal(proofs);
@@ -247,9 +452,10 @@ function updateNodesSection(nodes) {
     .sort((a, b) => String(a.node_id ?? "").localeCompare(String(b.node_id ?? "")))
     .forEach((node, idx) => {
       const tr = document.createElement("tr");
+      tr.dataset.nodeId = String(node.node_id ?? "");
       tr.innerHTML = `
         <td>${idx + 1}</td>
-        <td>${node.node_id ?? "–"}</td>
+        <td><span class="node-dot ${nodeOnlineClass(node.last_seen_unix)}"></span>${node.node_id ?? "–"}</td>
         <td>${shorten(node.public_key_hex ?? "", 10)}</td>
         <td>${formatTimestamp(node.last_seen_unix)}</td>
       `;
@@ -387,6 +593,7 @@ function updateJobsSection(summary, jobs) {
     .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
     .forEach((job) => {
       const tr = document.createElement("tr");
+      tr.dataset.jobId = String(job.id ?? "");
       tr.innerHTML = `
         <td>${job.id ?? "–"}</td>
         <td>${job.status ?? "–"}</td>
@@ -431,4 +638,209 @@ function updateProofTerminal(proofs) {
     `;
     term.appendChild(div);
   });
+}
+
+
+async function pingEndpoint(url){
+  const t0 = performance.now();
+  try{
+    const res = await fetch(url, { cache: "no-store" });
+    const ms = Math.round(performance.now() - t0);
+    return { ok: res.ok, status: res.status, ms };
+  }catch(err){
+    const ms = Math.round(performance.now() - t0);
+    return { ok:false, status: 0, ms, err: String(err) };
+  }
+}
+
+function setHealth(elStatus, elLatency, ok, ms){
+  if (!elStatus || !elLatency) return;
+  elLatency.textContent = isFinite(ms) ? `${ms} ms` : "–";
+  if (ok){
+    elStatus.textContent = "UP";
+    elStatus.className = "mini-value badge-up";
+    return;
+  }
+  elStatus.textContent = "DOWN";
+  elStatus.className = "mini-value badge-down";
+}
+
+async function refreshHealth(){
+  const apiStatus = document.getElementById("api-status");
+  const apiLatency = document.getElementById("api-latency");
+  const nStatus = document.getElementById("api-nodes-status");
+  const nLatency = document.getElementById("api-nodes-latency");
+  const jStatus = document.getElementById("api-jobs-status");
+  const jLatency = document.getElementById("api-jobs-latency");
+  const mStatus = document.getElementById("api-mining-status");
+  const mLatency = document.getElementById("api-mining-latency");
+
+  const dot = document.getElementById("api-dot");
+  const badge = document.getElementById("api-live");
+
+  // Use your existing endpoints
+  const pRoot = await pingEndpoint("/api/health").catch(()=>null);
+  const pNodes = await pingEndpoint("/api/nodes");
+  const pJobs = await pingEndpoint("/api/jobs");
+  const pMining = await pingEndpoint("/api/mining");
+
+  // If /api/health isn't present, treat API as up if any endpoint is up
+  const apiOk = (pRoot && pRoot.ok) || pNodes.ok || pJobs.ok || pMining.ok;
+  const apiMs = (pRoot && isFinite(pRoot.ms)) ? pRoot.ms : Math.min(pNodes.ms, pJobs.ms, pMining.ms);
+
+  setHealth(apiStatus, apiLatency, apiOk, apiMs);
+  setHealth(nStatus, nLatency, pNodes.ok, pNodes.ms);
+  setHealth(jStatus, jLatency, pJobs.ok, pJobs.ms);
+  setHealth(mStatus, mLatency, pMining.ok, pMining.ms);
+
+  if (dot && badge){
+    dot.classList.remove("dot-up","dot-down","dot-warn");
+    if (apiOk){
+      dot.classList.add("dot-up");
+      badge.style.background = "rgba(34,197,94,.12)";
+      badge.style.borderColor = "rgba(34,197,94,.18)";
+    } else {
+      dot.classList.add("dot-down");
+      badge.style.background = "rgba(251,113,133,.12)";
+      badge.style.borderColor = "rgba(251,113,133,.18)";
+    }
+  }
+}
+
+function initQuickstart(){
+  const btn = document.getElementById("copy-quickstart");
+  const pre = document.getElementById("quickstart-code");
+  if (btn && pre){
+    btn.addEventListener("click", async ()=>{
+      try{
+        await navigator.clipboard.writeText(pre.textContent || "");
+        btn.textContent = "Copied";
+        setTimeout(()=>btn.textContent="Copy", 900);
+      }catch{
+        btn.textContent = "Copy failed";
+        setTimeout(()=>btn.textContent="Copy", 900);
+      }
+    });
+  }
+
+  const open = document.getElementById("open-downloads");
+  if (open){
+    open.addEventListener("click", ()=>{
+      // Try switch to "Mode & Downloads" tab/section if your nav uses buttons.
+      const btn = Array.from(document.querySelectorAll(".nav-link")).find(b => (b.textContent||"").toLowerCase().includes("mode") || (b.textContent||"").toLowerCase().includes("download"));
+      if (btn) btn.click();
+      // Also scroll a bit
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+}
+
+function applyDeepLink(){
+  const params = new URLSearchParams(window.location.search);
+  const node = params.get("node");
+  const job = params.get("job");
+  if (node){
+    const obj = (__lastNodes || []).find(n => String(n.node_id ?? "") === String(node));
+    if (obj) openDrawer("NODE", String(obj.node_id ?? "NODE"), obj);
+  } else if (job){
+    const obj = (__lastJobs || []).find(j => String(j.id ?? "") === String(job));
+    if (obj) openDrawer("JOB", `JOB ${obj.id ?? "—"}`, obj);
+  }
+}
+
+
+
+function setState(id, mode){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.remove("hidden","loading","empty","error");
+  if(mode === "hidden"){ el.classList.add("hidden"); return; }
+  el.classList.add(mode);
+  el.querySelector && el.querySelector(".dot");
+}
+
+function updateStateForArray(stateId, arr){
+  if(!Array.isArray(arr)) { setState(stateId, "error"); return; }
+  if(arr.length === 0){ setState(stateId, "empty"); return; }
+  setState(stateId, "hidden");
+}
+
+
+function getApiBase(){
+  const b = document.body;
+  const v = b ? b.getAttribute("data-api-base") : "";
+  return (v && v.trim().length) ? v.trim() : "";
+}
+
+function initInstanceInfo(){
+  const proto = window.location.protocol;
+  const host = window.location.host || "local-file";
+  const apiBase = getApiBase();
+    const hostname = window.location.hostname || "";
+  const isFile = (proto === "file:");
+  const isLoopback = (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0");
+  const isPrivateIp = (() => {
+    // 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0 - 172.31.0.0
+    const m = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (!m) return false;
+    const a = Number(m[1]), b = Number(m[2]);
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  })();
+  const isLocal = (isFile || isLoopback || isPrivateIp);
+
+  const pill = document.getElementById("instance-pill");
+  const meta = document.getElementById("instance-meta");
+  const badge = document.getElementById("instance-badge");
+  const text = document.getElementById("instance-text");
+
+  const isRender = (!isLocal && host.includes("onrender.com"));
+  const label = isLocal ? "LOCAL" : (isRender ? "RENDER" : "LIVE");
+  const apiFull = (apiBase && apiBase.length) ? apiBase : `${proto}//${host}`;
+
+  if (pill){
+    pill.textContent = label;
+    pill.classList.toggle("local", isLocal);
+  }
+  if (meta){
+    meta.textContent = `Host: ${host} • API: ${apiFull}`;
+  }
+  if (badge){
+    badge.textContent = label;
+    badge.classList.toggle("live", !isLocal);
+    badge.classList.toggle("local", isLocal);
+  }
+  if (text){
+    text.textContent = isLocal
+      ? `You are viewing a LOCAL instance (${host}). It will NOT show nodes from Render unless your nodes point to this machine.`
+      : (isRender
+          ? `You are viewing the LIVE Render testnet (${host}). Nodes & miners report here.`
+          : `You are viewing a LIVE instance (${host}). Nodes & miners report here.`);
+  }
+
+  const copyBtn = document.getElementById("copy-instance");
+  if (copyBtn){
+    copyBtn.addEventListener("click", async ()=>{
+      try{
+        await navigator.clipboard.writeText(apiFull);
+        copyBtn.textContent = "Copied";
+        setTimeout(()=>copyBtn.textContent="Copy API Base", 900);
+      }catch{
+        copyBtn.textContent = "Copy failed";
+        setTimeout(()=>copyBtn.textContent="Copy API Base", 900);
+      }
+    });
+  }
+}
+
+function nodeOnlineClass(lastSeenUnix){
+  if (!lastSeenUnix) return "offline";
+  const now = Math.floor(Date.now()/1000);
+  const age = now - Number(lastSeenUnix);
+  if (!isFinite(age)) return "offline";
+  if (age <= 90) return "online";
+  if (age <= 180) return "warn";
+  return "offline";
 }

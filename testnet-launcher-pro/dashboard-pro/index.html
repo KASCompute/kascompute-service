@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
-  <base href="/dashboard/">
   <meta charset="UTF-8" />
   <title>KASCompute PRO — KCT Testnet Orchestrator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
 
   <!-- Leaflet CSS -->
   <link
     rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    href="style.css"
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
     crossorigin=""
   />
@@ -62,6 +62,20 @@
         </div>
 
         <div class="topbar-right">
+          <div class="commandbar">
+            <div class="hud-chips" aria-label="Live status">
+              <span class="chip chip-live" id="hud-live"><span class="live-dot"></span>LIVE</span>
+              <span class="chip"><span class="chip-k">NODES</span><span class="chip-v" id="hud-nodes">–</span></span>
+              <span class="chip"><span class="chip-k">JOBS</span><span class="chip-v" id="hud-jobs">–</span></span>
+              <span class="chip"><span class="chip-k">HEIGHT</span><span class="chip-v" id="hud-height">–</span></span>
+            </div>
+            <div class="command-search">
+              <span class="search-icon">⌕</span>
+              <input id="global-search" class="search-input" type="search" placeholder="Search node_id, job id, key, status…" autocomplete="off" />
+              <button class="search-clear" id="search-clear" type="button" title="Clear">×</button>
+            </div>
+          </div>
+
           <button class="btn btn-ghost" id="wallet-btn">
             <span class="dot-led"></span>
             Kaspa wallet (coming soon)
@@ -76,6 +90,19 @@
           </div>
         </div>
       </header>
+
+  <div class="instance-banner" id="instance-banner" role="status" aria-live="polite">
+    <div class="instance-banner-inner">
+      <div class="instance-banner-left">
+        <span class="instance-badge" id="instance-badge">—</span>
+        <span class="instance-text" id="instance-text">—</span>
+      </div>
+      <div class="instance-banner-actions">
+        <button class="btn btn-ghost" id="copy-instance" type="button">Copy API Base</button>
+      </div>
+    </div>
+  </div>
+
 
       <!-- HOW TO JOIN -->
 <section id="section-howto" class="section">
@@ -295,7 +322,63 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
         </div>
       </div>
     </div>
-  </div>
+  
+
+          <div class="card" id="system-card">
+            <div class="card-header-row">
+              <div>
+                <div class="card-label">SYSTEM</div>
+                <h3>API / Network Health</h3>
+              </div>
+              <span class="live-indicator" id="api-live">
+                <span class="live-dot" id="api-dot"></span>
+                LIVE
+              </span>
+            </div>
+
+            <div class="hero-divider"></div>
+
+            <div class="jobs-summary-row">
+              <div>
+                <div class="mini-label">API</div>
+                <div class="mini-value" id="api-status">–</div>
+                <div class="mini-sub" id="api-latency">–</div>
+              </div>
+              <div>
+                <div class="mini-label">NODES</div>
+                <div class="mini-value" id="api-nodes-status">–</div>
+                <div class="mini-sub" id="api-nodes-latency">–</div>
+              </div>
+              <div>
+                <div class="mini-label">JOBS</div>
+                <div class="mini-value" id="api-jobs-status">–</div>
+                <div class="mini-sub" id="api-jobs-latency">–</div>
+              </div>
+              <div>
+                <div class="mini-label">MINING</div>
+                <div class="mini-value" id="api-mining-status">–</div>
+                <div class="mini-sub" id="api-mining-latency">–</div>
+              </div>
+            </div>
+
+            <div class="howto-snippet">
+              <div class="card-label">QUICKSTART</div>
+              <div class="codeblock">
+                <code id="quickstart-code"># Start a node (example)
+./start_node_pro.ps1
+
+# Start miner (example)
+./start_miner_pro.ps1</code>
+              </div>
+              <div class="mode-actions" style="margin-top:10px">
+                <button class="btn btn-ghost" id="copy-quickstart" type="button">Copy</button>
+                <button class="btn btn-secondary" id="open-downloads" type="button">Downloads</button>
+              </div>
+              <p class="hero-footnote">Tip: share a deep link like <span style="font-family:var(--mono);color:rgba(0,227,192,.95)">?node=kct-pro-node-01</span> or <span style="font-family:var(--mono);color:rgba(0,227,192,.95)">?job=42</span>.</p>
+            </div>
+          </div>
+
+</div>
 </section>
 
 
@@ -407,6 +490,10 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
               </div>
             </div>
             <div id="node-map"></div>
+    <div class="state loading" id="map-state">
+      <span class="dot"></span>LOADING MAP
+    </div>
+    
             <div class="map-footnote">
               GeoIP uses proxy-aware headers on Render (X-Forwarded-For). If Geo is missing, a fallback point is used.
             </div>
@@ -571,18 +658,42 @@ WORKLOAD_MODE="hash"  # real CPU work (verified)</code></pre>
 
   <!-- Leaflet JS -->
   <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    src="app.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
   ></script>
 
   <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="app.js"></script>
 
   <!-- App logic -->
   <script src="app.js"></script>
 
-  <!-- UI Motion -->
-  <script src="parallax.js"></script>
+  <!-- Explorer Detail Drawer -->
+  <aside class="drawer" id="detail-drawer" aria-hidden="true">
+    <div class="drawer-backdrop" id="drawer-backdrop"></div>
+    <div class="drawer-panel" role="dialog" aria-modal="true" aria-label="Details">
+      <div class="drawer-head">
+        <div class="drawer-title">
+          <div class="drawer-kicker" id="drawer-kicker">DETAILS</div>
+          <div class="drawer-name" id="drawer-name">—</div>
+        </div>
+        <button class="drawer-close" id="drawer-close" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div class="drawer-body">
+        <div class="drawer-grid" id="drawer-grid"></div>
+
+        <div class="drawer-json">
+          <div class="drawer-json-head">
+            <span class="drawer-json-label">RAW</span>
+            <button class="btn btn-ghost" id="drawer-copy" type="button">Copy JSON</button>
+          </div>
+          <pre class="drawer-pre" id="drawer-pre">{}</pre>
+        </div>
+      </div>
+    </div>
+  </aside>
+
 </body>
 </html>

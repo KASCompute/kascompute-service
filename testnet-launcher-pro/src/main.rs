@@ -769,6 +769,63 @@ async fn health() -> &'static str {
     "OK"
 }
 
+#[derive(Serialize)]
+struct HealthPayload {
+    ok: bool,
+    uptime_sec: u64,
+    nodes_total: usize,
+    nodes_online_90s: usize,
+    jobs_total: usize,
+    jobs_pending: u64,
+    jobs_running: u64,
+    jobs_completed: u64,
+    block_height: u64,
+    month_index: u64,
+    total_emitted_nano: u64,
+    timestamp: u64,
+}
+
+async fn api_health(State(state): State<AppState>) -> Json<HealthPayload> {
+    let now = now_unix();
+
+    let s = state.inner.lock().unwrap();
+
+    let nodes_total = s.nodes.len();
+    let nodes_online_90s = s
+        .nodes
+        .values()
+        .filter(|n| now.saturating_sub(n.last_seen_unix) <= 90)
+        .count();
+
+    let mut pending = 0;
+    let mut running = 0;
+    let mut completed = 0;
+    for j in s.jobs.values() {
+        match j.status {
+            JobStatus::Pending => pending += 1,
+            JobStatus::Running => running += 1,
+            JobStatus::Completed => completed += 1,
+        }
+    }
+
+    let uptime_sec = now.saturating_sub(s.genesis_time);
+
+    Json(HealthPayload {
+        ok: true,
+        uptime_sec,
+        nodes_total,
+        nodes_online_90s,
+        jobs_total: s.jobs.len(),
+        jobs_pending: pending,
+        jobs_running: running,
+        jobs_completed: completed,
+        block_height: s.block_height,
+        month_index: months_since(s.genesis_time),
+        total_emitted_nano: s.total_emitted_nano,
+        timestamp: now,
+    })
+}
+
 async fn heartbeat(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -902,6 +959,18 @@ let app = Router::new()
     .route("/proofs", get(list_proofs))
     .route("/mining", get(mining_info))
     .route("/rewards/leaderboard", get(rewards_leaderboard))
+    
+    // Dashbaord API
+
+    .route("/api/health", get(api_health))
+    .route("/api/nodes", get(list_nodes_handler))
+    .route("/api/jobs", get(list_jobs))
+    .route("/api/jobs/summary", get(jobs_summary))
+    .route("/api/jobs/recent", get(recent_jobs))
+    .route("/api/proofs", get(list_proofs))
+    .route("/api/mining", get(mining_info))
+    .route("/api/rewards/leaderboard", get(rewards_leaderboard))
+
     .layer(cors)
     .with_state(app_state);
 
