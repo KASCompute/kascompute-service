@@ -226,7 +226,8 @@ function wireRowClicks(){
 }
 
 // API base from <body data-api-base="...">, fallback = same-origin
-const API_BASE = (document.body?.dataset?.apiBase?.trim() || `${window.location.origin}/api`).replace(/\/+$/, "");
+const API_BASE = (document.body?.dataset?.apiBase?.trim() || window.location.origin).replace(/\/+$/, "");
+
 const KCT_NANO = 100_000_000;
 
 // Leaflet map globals
@@ -326,11 +327,11 @@ async function fetchKaspaPrice() {
 async function refreshAll() {
   try {
 const [mining, jobsSummary, jobs, nodes, proofs] = await Promise.all([
-  fetchJson("/mining"),
-  fetchJson("/jobs/summary"),
-  fetchJson("/jobs"),
-  fetchJson("/nodes"),
-  fetchJson("/proofs"),
+fetchJson("/api/mining"),
+fetchJson("/api/jobs/summary"),
+fetchJson("/api/jobs"),
+fetchJson("/api/nodes"),
+fetchJson("/api/proofs"),
 ]);
 
 
@@ -879,7 +880,7 @@ function nodeOnlineClass(lastSeenUnix){
 async function updateNodesCountUI(){
   try{
     const apiBase = getApiBase();
-    const url = (apiBase && apiBase.length) ? `${apiBase}/api/nodes` : `/api/nodes`;
+    const url = `${API_BASE}/api/nodes`;
     const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) throw new Error(`nodes_http_${r.status}`);
     const nodes = await r.json();
