@@ -226,7 +226,7 @@ function wireRowClicks(){
 }
 
 // API base from <body data-api-base="...">, fallback = same-origin
-const API_BASE = document.body?.dataset?.apiBase?.trim() || "";
+const API_BASE = (document.body?.dataset?.apiBase?.trim() || `${window.location.origin}/api`).replace(/\/+$/, "");
 const KCT_NANO = 100_000_000;
 
 // Leaflet map globals
@@ -325,13 +325,15 @@ async function fetchKaspaPrice() {
 // ===== Data refresh =====
 async function refreshAll() {
   try {
-    const [mining, jobsSummary, jobs, nodes, proofs] = await Promise.all([
-      fetchJson("/api/mining"),
-      fetchJson("/api/jobs/summary"),
-      fetchJson("/api/jobs"),
-      fetchJson("/api/nodes"),
-      fetchJson("/api/proofs"),
-    ]);
+const [mining, jobsSummary, jobs, nodes, proofs] = await Promise.all([
+  fetchJson("/mining"),
+  fetchJson("/jobs/summary"),
+  fetchJson("/jobs"),
+  fetchJson("/nodes"),
+  fetchJson("/proofs"),
+]);
+
+
 
     __lastMining = mining;
     __lastJobsSummary = jobsSummary;
@@ -360,8 +362,9 @@ async function refreshAll() {
 }
 
 async function fetchJson(path) {
-  const res = await fetch(API_BASE + path, { cache: "no-store" });
-  if (!res.ok) throw new Error("HTTP " + res.status + " for " + path);
+  const url = /^https?:\/\//i.test(path) ? path : (API_BASE + path);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
   return res.json();
 }
 
