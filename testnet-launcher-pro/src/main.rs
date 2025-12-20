@@ -163,6 +163,9 @@ struct Job {
     // NEW: lifecycle realism
     assigned_unix: Option<u64>,
     completed_unix: Option<u64>,
+
+    // DEMO tagging (sauber löschen ohne Überraschungen)
+    is_demo: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -274,6 +277,28 @@ struct RewardView {
     share: f64,
 }
 
+// DEMO: status response
+#[derive(Debug, Clone, Serialize)]
+struct DemoStatus {
+    enabled: bool,
+    demo_nodes: usize,
+    demo_jobs: usize,
+}
+
+// METRICS: mainnet-friendly telemetry (read-only)
+#[derive(Debug, Clone, Serialize)]
+struct Metrics {
+    window_sec: u64,
+    active_nodes_90s: usize,
+    active_miners_90s: usize,
+    jobs_completed_window: usize,
+    jobs_per_min: f64,
+    avg_job_ms: u64,
+    proofs_window: usize,
+    timestamp: u64,
+}
+
+
 // =====================================
 // GLOBAL STATE
 // =====================================
@@ -298,6 +323,9 @@ struct InnerState {
 
     // NEW
     node_stats: HashMap<String, NodeStats>,
+
+    // DEMO
+    demo_running: bool,
 }
 
 impl AppState {
@@ -315,6 +343,7 @@ impl AppState {
             node_last_block_reward: HashMap::new(),
             node_cumulative_work: HashMap::new(),
             node_stats: HashMap::new(),
+            demo_running: false,
         };
 
         AppState {
@@ -403,6 +432,105 @@ impl AppState {
     }
 
     // =========================
+    // DEMO MODE (LOCAL ONLY)
+    // =========================
+
+    fn demo_spawn(&self, nodes: usize, jobs: usize) {
+        let mut s = self.inner.lock().unwrap();
+        s.demo_running = true;
+
+        let now = now_unix();
+
+        // demo nodes
+        for i in 0..nodes {
+            let node_id = format!("demo-node-{:02}", i + 1);
+
+            // deterministic geo spread
+            let lat = 48.0 + (i as f64 * 0.18);
+            let lon = 11.0 + (i as f64 * 0.22);
+
+            s.nodes.insert(
+                node_id.clone(),
+                Node {
+                    node_id: node_id.clone(),
+                    public_key_hex: format!("demo{:02}deadbeef", i + 1),
+                    last_seen_unix: now,
+                    latitude: Some(lat),
+                    longitude: Some(lon),
+                    country: Some("DEMO".to_string()),
+                },
+            );
+
+            // init accounting maps
+            s.node_rewards.entry(node_id.clone()).or_insert(0);
+            s.node_last_block_reward.entry(node_id.clone()).or_insert(0);
+            s.node_cumulative_work.entry(node_id.clone()).or_insert(0);
+
+            // let demo nodes pass uptime gate immediately
+            s.node_stats.entry(node_id.clone()).or_insert(NodeStats {
+                node_id,
+                first_seen_unix: now.saturating_sub(MIN_UPTIME_FOR_REWARDS_SEC + 10),
+                last_seen_unix: now,
+                total_effective_work_units: 0,
+                verified_work_units: 0,
+            });
+        }
+
+        // demo jobs pending
+        let mut rng = rand::thread_rng();
+        for _ in 0..jobs {
+            let wu = rng.gen_range(500_000..=5_000_000);
+
+            let id = s.next_job_id;
+            s.next_job_id += 1;
+
+            s.jobs.insert(
+                id,
+                Job {
+                    id,
+                    work_units: wu,
+                    status: JobStatus::Pending,
+                    assigned_node: None,
+                    created_unix: now,
+                    updated_unix: now,
+                    assigned_unix: None,
+                    completed_unix: None,
+                    is_demo: true,
+                },
+            );
+        }
+    }
+
+    fn demo_clear(&self) {
+        let mut s = self.inner.lock().unwrap();
+        s.demo_running = false;
+
+        // remove demo nodes + accounting
+        s.nodes.retain(|k, _| !k.starts_with("demo-"));
+        s.node_rewards.retain(|k, _| !k.starts_with("demo-"));
+        s.node_last_block_reward.retain(|k, _| !k.starts_with("demo-"));
+        s.node_cumulative_work.retain(|k, _| !k.starts_with("demo-"));
+        s.node_stats.retain(|k, _| !k.starts_with("demo-"));
+
+        // remove demo proofs
+        s.proofs.retain(|p| !p.node_id.starts_with("demo-"));
+
+        // remove demo jobs (EXAKT, ohne Überraschungen)
+        s.jobs.retain(|_, j| !j.is_demo);
+    }
+
+    fn demo_status(&self) -> DemoStatus {
+        let s = self.inner.lock().unwrap();
+        let demo_nodes = s.nodes.keys().filter(|k| k.starts_with("demo-")).count();
+        let demo_jobs = s.jobs.values().filter(|j| j.is_demo).count();
+        DemoStatus {
+            enabled: s.demo_running,
+            demo_nodes,
+            demo_jobs,
+        }
+    }
+
+    // =========================
     // HEARTBEATS + GEO
     // =========================
 
@@ -473,6 +601,7 @@ impl AppState {
                 updated_unix: now,
                 assigned_unix: None,
                 completed_unix: None,
+                is_demo: false,
             },
         );
 
@@ -739,6 +868,76 @@ impl AppState {
     }
 }
 
+impl AppState {
+    fn compute_metrics(&self, window_sec: u64) -> Metrics {
+        let s = self.inner.lock().unwrap();
+        let now = now_unix();
+        let window = window_sec;
+
+        // Active nodes (90s)
+        let active_nodes_90s = s
+            .nodes
+            .values()
+            .filter(|n| now.saturating_sub(n.last_seen_unix) <= 90)
+            .count();
+
+        // Proofs in window
+        let proofs_window: Vec<&ProofRecord> = s
+            .proofs
+            .iter()
+            .filter(|p| now >= p.timestamp_unix && now - p.timestamp_unix <= window)
+            .collect();
+
+        let proofs_count = proofs_window.len();
+
+        // Active miners (90s) = nodes that produced proofs recently
+        let mut active_miners = std::collections::HashSet::<String>::new();
+        for p in proofs_window.iter() {
+            if now.saturating_sub(p.timestamp_unix) <= 90 {
+                active_miners.insert(p.node_id.clone());
+            }
+        }
+        let active_miners_90s = active_miners.len();
+
+        // Jobs completed in window + avg duration
+        let mut completed_jobs = 0usize;
+        let mut total_job_ms: u128 = 0;
+
+        for j in s.jobs.values() {
+            if let (Some(assigned), Some(done)) = (j.assigned_unix, j.completed_unix) {
+                if now >= done && now - done <= window {
+                    completed_jobs += 1;
+                    total_job_ms += ((done - assigned) as u128) * 1000;
+                }
+            }
+        }
+
+        let avg_job_ms = if completed_jobs > 0 {
+            (total_job_ms / completed_jobs as u128) as u64
+        } else {
+            0
+        };
+
+        let jobs_per_min = if window > 0 {
+            (completed_jobs as f64) * 60.0 / (window as f64)
+        } else {
+            0.0
+        };
+
+        Metrics {
+            window_sec,
+            active_nodes_90s,
+            active_miners_90s,
+            jobs_completed_window: completed_jobs,
+            jobs_per_min,
+            avg_job_ms,
+            proofs_window: proofs_count,
+            timestamp: now,
+        }
+    }
+}
+
+
 // =====================================
 // BACKGROUND TASKS
 // =====================================
@@ -914,6 +1113,74 @@ async fn rewards_leaderboard(State(state): State<AppState>) -> Json<Vec<RewardVi
     Json(state.rewards_leaderboard())
 }
 
+async fn metrics_handler(State(state): State<AppState>) -> Json<Metrics> {
+    // v1: 5-Minuten Fenster (passt zu deinem Reward-Window 300s)
+    Json(state.compute_metrics(300))
+}
+
+
+// =====================
+// DEMO HANDLERS (LOCAL ONLY)
+// =====================
+
+async fn demo_status_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<AppState>,
+) -> (StatusCode, Json<DemoStatus>) {
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(DemoStatus {
+                enabled: false,
+                demo_nodes: 0,
+                demo_jobs: 0,
+            }),
+        );
+    }
+    (StatusCode::OK, Json(state.demo_status()))
+}
+
+async fn demo_start(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<AppState>,
+) -> (StatusCode, Json<DemoStatus>) {
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(DemoStatus {
+                enabled: false,
+                demo_nodes: 0,
+                demo_jobs: 0,
+            }),
+        );
+    }
+
+    // idempotent: clean first
+    state.demo_clear();
+    state.demo_spawn(25, 300);
+
+    (StatusCode::OK, Json(state.demo_status()))
+}
+
+async fn demo_stop(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<AppState>,
+) -> (StatusCode, Json<DemoStatus>) {
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(DemoStatus {
+                enabled: false,
+                demo_nodes: 0,
+                demo_jobs: 0,
+            }),
+        );
+    }
+
+    state.demo_clear();
+    (StatusCode::OK, Json(state.demo_status()))
+}
+
 // =====================================
 // MAIN
 // =====================================
@@ -934,46 +1201,51 @@ async fn main() {
         .allow_headers(Any)
         .allow_methods(Any);
 
-let dashboard_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dashboard-pro");
+    let dashboard_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dashboard-pro");
 
-println!("dashboard_root = {:?}", dashboard_root);
-println!("index exists? {}", dashboard_root.join("index.html").exists());
-println!("style exists? {}", dashboard_root.join("style.css").exists());
+    println!("dashboard_root = {:?}", dashboard_root);
+    println!("index exists? {}", dashboard_root.join("index.html").exists());
+    println!("style exists? {}", dashboard_root.join("style.css").exists());
 
-let dashboard_service = ServeDir::new(dashboard_root.clone())
-    .append_index_html_on_directories(true)
-    .not_found_service(ServeFile::new(dashboard_root.join("index.html")));
+    let dashboard_service = ServeDir::new(dashboard_root.clone())
+        .append_index_html_on_directories(true)
+        .not_found_service(ServeFile::new(dashboard_root.join("index.html")));
 
-let app = Router::new()
-    .route("/", get(|| async { Redirect::permanent("/dashboard/") }))
-    .route("/dashboard", get(|| async { Redirect::permanent("/dashboard/") }))
-    .nest_service("/dashboard/", dashboard_service)
-    .route("/health", get(health))
-    .route("/node/heartbeat", post(heartbeat))
-    .route("/nodes", get(list_nodes_handler))
-    .route("/jobs/next", post(next_job))
-    .route("/jobs/proof", post(submit_proof))
-    .route("/jobs", get(list_jobs))
-    .route("/jobs/summary", get(jobs_summary))
-    .route("/jobs/recent", get(recent_jobs))
-    .route("/proofs", get(list_proofs))
-    .route("/mining", get(mining_info))
-    .route("/rewards/leaderboard", get(rewards_leaderboard))
-    
-    // Dashbaord API
+    let app = Router::new()
+        .route("/", get(|| async { Redirect::permanent("/dashboard/") }))
+        .route("/dashboard", get(|| async { Redirect::permanent("/dashboard/") }))
+        .nest_service("/dashboard/", dashboard_service)
+        .route("/health", get(health))
+        .route("/node/heartbeat", post(heartbeat))
+        .route("/nodes", get(list_nodes_handler))
+        .route("/jobs/next", post(next_job))
+        .route("/jobs/proof", post(submit_proof))
+        .route("/jobs", get(list_jobs))
+        .route("/jobs/summary", get(jobs_summary))
+        .route("/jobs/recent", get(recent_jobs))
+        .route("/proofs", get(list_proofs))
+        .route("/mining", get(mining_info))
+        .route("/rewards/leaderboard", get(rewards_leaderboard))
 
-    .route("/api/health", get(api_health))
-    .route("/api/nodes", get(list_nodes_handler))
-    .route("/api/jobs", get(list_jobs))
-    .route("/api/jobs/summary", get(jobs_summary))
-    .route("/api/jobs/recent", get(recent_jobs))
-    .route("/api/proofs", get(list_proofs))
-    .route("/api/mining", get(mining_info))
-    .route("/api/rewards/leaderboard", get(rewards_leaderboard))
+        // Dashboard API
+        .route("/api/health", get(api_health))
+        .route("/api/nodes", get(list_nodes_handler))
+        .route("/api/jobs", get(list_jobs))
+        .route("/api/jobs/summary", get(jobs_summary))
+        .route("/api/jobs/recent", get(recent_jobs))
+        .route("/api/proofs", get(list_proofs))
+        .route("/api/mining", get(mining_info))
+        .route("/api/rewards/leaderboard", get(rewards_leaderboard))
+        .route("/api/metrics", get(metrics_handler))
 
-    .layer(cors)
-    .with_state(app_state);
 
+        // DEMO API (LOCAL ONLY)
+        .route("/api/debug/demo/status", get(demo_status_handler))
+        .route("/api/debug/demo/start", post(demo_start))
+        .route("/api/debug/demo/stop", post(demo_stop))
+
+        .layer(cors)
+        .with_state(app_state);
 
     // Render-ready PORT
     let port: u16 = env::var("PORT")
