@@ -226,7 +226,14 @@ function wireRowClicks(){
 }
 
 // API base from <body data-api-base="...">, fallback = same-origin
-const API_BASE = (document.body?.dataset?.apiBase?.trim() || window.location.origin).replace(/\/+$/, "");
+function normalizeApiBase(raw) {
+  const v = String(raw || "").trim().replace(/\/+$/, "");
+  if (v) return v.replace(/\/api$/i, "");
+  return window.location.origin;
+}
+
+const API_BASE = normalizeApiBase(document.body?.dataset?.apiBase);
+
 
 const KCT_NANO = 100_000_000;
 
