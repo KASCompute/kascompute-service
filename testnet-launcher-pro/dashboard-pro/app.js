@@ -879,24 +879,24 @@ function nodeOnlineClass(lastSeenUnix){
 // ===== Nodes count pill + banner =====
 async function updateNodesCountUI(){
   try{
-    const apiBase = getApiBase();
-    const url = `${API_BASE}/api/nodes`;
-    const r = await fetch(url, { cache: "no-store" });
-    if (!r.ok) throw new Error(`nodes_http_${r.status}`);
-    const nodes = await r.json();
+    const nodes = await fetchJson("/api/nodes");
 
     const now = Math.floor(Date.now()/1000);
     const total = Array.isArray(nodes) ? nodes.length : 0;
-    const online = Array.isArray(nodes) ? nodes.filter(n=>{
-      const t = Number(n?.last_seen_unix || 0);
-      return t > 0 && (now - t) <= 90;
-    }).length : 0;
+    const online = Array.isArray(nodes)
+      ? nodes.filter(n => {
+          const t = Number(n?.last_seen_unix || 0);
+          return t > 0 && (now - t) <= 90;
+        }).length
+      : 0;
 
     const pill = document.getElementById("nodes-pill-count");
     if (pill) pill.textContent = `${online}/${total}`;
 
     const banner = document.getElementById("nodes-banner-count");
-    if (banner) banner.innerHTML = `Nodes <strong>${online}</strong> / ${total} • online ≤90s`;
+    if (banner) {
+      banner.innerHTML = `Nodes <strong>${online}</strong> / ${total} • online ≤90s`;
+    }
 
   } catch {
     const pill = document.getElementById("nodes-pill-count");
@@ -905,3 +905,5 @@ async function updateNodesCountUI(){
     if (banner) banner.textContent = `Nodes —`;
   }
 }
+
+
