@@ -42,36 +42,24 @@ It explores how decentralized compute could evolve around Kaspa:
 
 ---
 
-## ⚡ Vision Architecture (Alignment with vProgs)
+## ⚡ Vision Architecture (vProgs Alignment)
 
-                ┌─────────────────────────────┐
-│     Kaspa BlockDAG (L1)           │
-│  Settlement • Final Security.     │
-                └──────────────▲──────────────┘
-                  │
-                  │ future on-chain settlement
-                  │ via vProgs (once live)
-               ┌───────────────┴────────────────┐
-│            vProgs Layer              │
-│ 
-  ZK-Logic • Verification • I/O        │
-               └──────────────▲─────────────────┘
-                  │
-         proof batches / anchors
-                  │
-               ┌───────────────┴─────────────────┐.      │           KASCompute Layer            │
-│      Off-Chain Execution • PoC • Jobs │
-│      Rewards • State • Scheduling     │
-               └──────────────▲───────────────────┘
-                  │
-            node heartbeat
-           compute execution
-                  │
-    ┌───────────┴───────────┐
-    │        CPU/GPU Nodes      │
-    │    Workers • Proof Feed   │
-                           
- 
+Kaspa (L1 Settlement)
+└─ Finality • Security • BlockDAG
+
+vProgs (Future Settlement Layer)
+└─ ZK Verification
+└─ Conditional Logic
+└─ Proof Anchoring
+
+KASCompute (Off-Chain Execution Layer)
+└─ Proof-of-Compute (PoC)
+└─ State & Reward Engine
+└─ Scheduling / Jobs / Nodes
+
+Compute Nodes
+└─ CPU/GPU Workload
+└─ Heartbeat → Proof Submission
 > Today = Prototype.  
 > Tomorrow = Settlement on Kaspa.
 
@@ -114,18 +102,18 @@ GET  /health POST /reward/preview GET  /emission/monthly GET  /investor/value_fl
 ## 🏗 Project Structure
 
 kascompute-service/
-├── src/                         # Core Rust backend
-│   ├── coordinator.rs           # API, jobs, PoC, scheduling
-│   ├── state.rs                 # global state / rewards / nodes
-│   └── proof.rs                 # proof-of-compute pipeline
+├─ src/
+│  ├─ coordinator.rs      # API, jobs, PoC, scheduling
+│  ├─ state.rs            # nodes, rewards, global state
+│  └─ proof.rs            # proof-of-compute pipeline
 │
-├── testnet-launcher/            # current test environment
-│   ├── src/main.rs              # coordinator (Render deployment)
-│   └── public/                  # dashboard (index/app/style)
+├─ testnet-launcher/
+│  ├─ src/main.rs         # live coordinator (Render)
+│  └─ public/             # dashboard (index/app/style)
 │
-├── assets/                      # banners, diagrams, logo
-├── scripts/                     # deployment & tooling
-└── docs/                        # whitepaper / architecture notes (future vProgs)
+├─ assets/                # banners, diagrams, logo
+├─ scripts/               # deployment & tooling
+└─ docs/                  # vProgs notes / architecture
 
 
 ## 🚀 Roadmap
