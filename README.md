@@ -44,24 +44,25 @@ It explores how decentralized compute could evolve around Kaspa:
 
 ## ⚡ Vision Architecture (vProgs Alignment)
 
-Kaspa (L1 Settlement)
-└─ Finality • Security • BlockDAG
+**Kaspa (Layer 1 - Settlement Layer)**
+- Finality, Security, BlockDAG
 
-vProgs (Future Settlement Layer)
-└─ ZK Verification
-└─ Conditional Logic
-└─ Proof Anchoring
+**vProgs (Future Execution Layer)**
+- ZK Verification
+- Conditional Logic
+- Proof Anchoring (future settlement target)
 
-KASCompute (Off-Chain Execution Layer)
-└─ Proof-of-Compute (PoC)
-└─ State & Reward Engine
-└─ Scheduling / Jobs / Nodes
+**KASCompute (Off-Chain Compute Layer - Today)**
+- Proof-of-Compute (PoC)
+- State & Reward Engine
+- Job Scheduling / Nodes
 
-Compute Nodes
-└─ CPU/GPU Workload
-└─ Heartbeat → Proof Submission
-> Today = Prototype.  
-> Tomorrow = Settlement on Kaspa.
+**Compute Nodes**
+- CPU/GPU Workload
+- Heartbeat → Proof Submission
+
+🔹 **Today:** Off-chain prototype  
+🔹 **Future:** Settlement via vProgs on Kaspa.   
 
 ---
 
@@ -102,18 +103,16 @@ GET  /health POST /reward/preview GET  /emission/monthly GET  /investor/value_fl
 ## 🏗 Project Structure
 
 kascompute-service/
-├─ src/
-│  ├─ coordinator.rs      # API, jobs, PoC, scheduling
-│  ├─ state.rs            # nodes, rewards, global state
-│  └─ proof.rs            # proof-of-compute pipeline
-│
-├─ testnet-launcher/
-│  ├─ src/main.rs         # live coordinator (Render)
-│  └─ public/             # dashboard (index/app/style)
-│
-├─ assets/                # banners, diagrams, logo
-├─ scripts/               # deployment & tooling
-└─ docs/                  # vProgs notes / architecture
+- src/                          # Core Rust backend
+  - coordinator.rs              # API, jobs, PoC, scheduling
+  - state.rs                    # global state, nodes, rewards
+  - proof.rs                    # proof-of-compute logic
+- testnet-launcher/             # live test environment
+  - src/main.rs                 # coordinator (Render deployment)
+  - public/                     # dashboard (index/app/style)
+- assets/                       # banners, diagrams, logo
+- scripts/                      # deployment & tooling
+- docs/                         # vProgs research & architecture notes
 
 
 ## 🚀 Roadmap
