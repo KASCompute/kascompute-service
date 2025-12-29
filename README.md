@@ -82,7 +82,7 @@ R(m) = 200 * 0.99^(m - 1)
 ---
 
 ## 🖥 Live Dashboard Prototype
-🔗 https://kascompute-testnet.onrender.com/dashboard/
+🔗 https://dashboard.kascompute.org
 
 - Active nodes & uptime
 - Proof-of-Compute feed
