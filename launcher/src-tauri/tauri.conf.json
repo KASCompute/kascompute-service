@@ -1,15 +1,14 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "KASCompute Launcher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.kascompute.launcher",
-"build": {
-  "beforeDevCommand": "npm run dev",
-  "beforeBuildCommand": "npm run build",
-  "devUrl": "http://localhost:8080",
-  "frontendDist": "../dist"
-}
-,
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:8080",
+    "frontendDist": "../dist"
+  },
   "app": {
     "windows": [
       {
@@ -24,13 +23,28 @@
       "csp": null
     }
   },
-"bundle": {
-  "active": true,
-  "externalBin": [
-    "binaries/kascompute-node",
-    "binaries/kascompute-miner"
-  ]
-}
-
-
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/kascompute-node",
+      "binaries/kascompute-miner"
+    ]
+  },
+  "plugins": {
+    "updater": {
+     "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFNTZDRjQwQThDQjA3MjIKUldRaUI4dW9RTTlXUG8xMVVCTHZVMThkbmpiN01VVjhJNEl2KzJDb1hjeHg4dS9qdGJ2aEhFaVAK",
+      "endpoints": [
+        "https://github.com/KASCompute/kascompute-service/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }
