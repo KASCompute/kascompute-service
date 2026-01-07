@@ -26,7 +26,7 @@ export function Header({ nodeStatus, minerStatus, onRefresh }: HeaderProps) {
 
   return (
     <header className="h-16 border-b border-border/50 bg-card/50 backdrop-blur-sm px-6 flex items-center justify-between shrink-0">
-      {/* ✅ GENAU HIER: nur dieser Block ist Drag */}
+      {/* ✅ NUR DIESER BLOCK IST DRAG */}
       <div data-tauri-drag-region className="flex flex-col select-none">
         <h1 className="text-lg font-semibold text-foreground tracking-tight">
           KASCompute Launcher

@@ -61,3 +61,5 @@ identity.json
 node_id.txt
 *_node_key.txt
 pro_node*_key.txt
+
+.tmp.driveupload/

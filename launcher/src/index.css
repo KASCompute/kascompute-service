@@ -1,3 +1,11 @@
+html, body, #root { -webkit-app-region: no-drag; }
+[data-tauri-drag-region] { -webkit-app-region: drag; }
+
+button, a, input, textarea, select, [role="button"], [tabindex] {
+  -webkit-app-region: no-drag !important;
+}
+
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -154,3 +162,4 @@
     @apply border-l-2 border-l-destructive;
   }
 }
+

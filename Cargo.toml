@@ -25,6 +25,7 @@ reqwest = { version = "0.12", features = ["blocking", "json"] }
 [workspace]
 members = ["testnet-launcher", "testnet-launcher-pro"]
 resolver = "2"
+exclude = ["launcher/src-tauri",]
 
 [[bin]]
 name = "node-launcher"

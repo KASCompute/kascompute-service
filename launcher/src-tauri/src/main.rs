@@ -1,6 +1,7 @@
 mod commands;
 mod identity;
 mod sidecar;
+mod runtime_state;
 
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ fn main() {
       commands::stop_miner,
       commands::get_status,
       commands::send_heartbeat,
+      commands::get_metrics,     
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

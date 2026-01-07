@@ -8,6 +8,11 @@ type BackendStatus = {
   miner: { running: boolean; pid?: number | null };
 };
 
+type MetricsStatus = {
+  node: { uptime?: string | null; crashes?: number | null };
+  miner: { uptime?: string | null; crashes?: number | null };
+};
+
 type SidecarLogPayload = {
   target: "node" | "miner";
   stream: "stdout" | "stderr" | "event";
@@ -19,12 +24,15 @@ const DEFAULT_NODE: NodeStatus = {
   pid: undefined,
   uptime: undefined,
   lastHeartbeat: undefined,
+  // crashes optional (falls type es hat)
+  ...( {} as any ),
 };
 
 const DEFAULT_MINER: MinerStatus = {
   status: "stopped",
   pid: undefined,
   uptime: undefined,
+  ...( {} as any ),
 };
 
 function nowTs() {
@@ -48,7 +56,8 @@ export function useTauriLauncher() {
   const apiBase = "https://kascompute-testnet.onrender.com";
 
   // verhindert parallele Calls
-  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false); // nur als Mutex für refresh/poll, nicht fürs UI
 
   // Identity cache (kommt aus Rust get_identity)
   const identityRef = useRef<{ node_id: string; public_key_hex: string } | null>(null);
@@ -69,16 +78,25 @@ export function useTauriLauncher() {
     }
   }, []);
 
-  const apply = useCallback((s: BackendStatus) => {
+  const apply = useCallback((s: BackendStatus, m?: MetricsStatus | null) => {
     // NODE
     if (s?.node?.running) {
       setNodeStatus((p) => ({
         ...p,
         status: "running",
         pid: (s.node.pid ?? undefined) as any,
+        // ✅ uptime/crashes aus metrics (wenn vorhanden)
+        uptime: m?.node?.uptime ?? p.uptime,
+        ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
       }));
     } else {
-      setNodeStatus({ ...DEFAULT_NODE, status: "stopped" });
+      // wenn stopped: uptime trotzdem anzeigen lassen (persistente totals)
+      setNodeStatus((p) => ({
+        ...DEFAULT_NODE,
+        status: "stopped",
+        uptime: m?.node?.uptime ?? p.uptime,
+        ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
+      }));
     }
 
     // MINER
@@ -87,24 +105,36 @@ export function useTauriLauncher() {
         ...p,
         status: "running",
         pid: (s.miner.pid ?? undefined) as any,
+        uptime: m?.miner?.uptime ?? p.uptime,
+        ...(typeof m?.miner?.crashes === "number" ? ({ crashes: m.miner.crashes } as any) : {}),
       }));
     } else {
-      setMinerStatus({ ...DEFAULT_MINER, status: "stopped" });
+      setMinerStatus((p) => ({
+        ...DEFAULT_MINER,
+        status: "stopped",
+        uptime: m?.miner?.uptime ?? p.uptime,
+        ...(typeof m?.miner?.crashes === "number" ? ({ crashes: m.miner.crashes } as any) : {}),
+      }));
     }
   }, []);
 
   const refresh = useCallback(async () => {
     if (!isTauri()) return;
+
+    // polling darf skippen, aber UI darf nicht blockieren
     if (busyRef.current) return;
 
     busyRef.current = true;
     try {
-      const s = await safeInvoke<BackendStatus>("get_status");
-      if (s) apply(s);
-    } catch (e) {
-      console.error("get_status failed", e);
+      // ✅ parallel status + metrics
+      const [s, m] = await Promise.all([
+        safeInvoke<BackendStatus>("get_status"),
+        safeInvoke<MetricsStatus>("get_metrics"),
+      ]);
 
-      // Bei Fehler NICHT auf starting/stopping hängen bleiben:
+      if (s) apply(s, m ?? null);
+    } catch (e) {
+      console.error("refresh failed", e);
       setNodeStatus((p) =>
         p.status === "starting" || p.status === "stopping" ? { ...p, status: "stopped" } : p
       );
@@ -227,15 +257,13 @@ export function useTauriLauncher() {
             ? "node"
             : "miner";
 
-        // ✅ WICHTIG: KEIN args: {...} mehr!
-        // Rust command signature: send_heartbeat(api_base: String, payload: HeartbeatPayload)
         await safeInvoke("send_heartbeat", {
           apiBase,
           payload: {
             node_id: id.node_id,
             public_key_hex: id.public_key_hex,
             role,
-            launcher_version: "0.1.0",
+            launcher_version: "0.2.0",
             // Geo absichtlich leer → Backend macht lookup
           },
         });
@@ -252,7 +280,6 @@ export function useTauriLauncher() {
       }
     };
 
-    // sofort einmal
     tick();
 
     const t = setInterval(() => {
@@ -277,10 +304,10 @@ export function useTauriLauncher() {
     return {
       startNode: async () => {
         if (!requireTauri()) return;
-        if (busyRef.current) return;
+        if (busy) return;
 
+        setBusy(true);
         setNodeStatus((p) => ({ ...p, status: "starting" }));
-        busyRef.current = true;
 
         try {
           await safeInvoke("start_node");
@@ -288,7 +315,7 @@ export function useTauriLauncher() {
           console.error("start_node failed", e);
           setNodeStatus((p) => ({ ...p, status: "stopped" }));
         } finally {
-          busyRef.current = false;
+          setBusy(false);
           await refresh();
         }
       },
@@ -347,7 +374,7 @@ export function useTauriLauncher() {
         }
       },
     };
-  }, [refresh]);
+  }, [refresh, busy]);
 
   return { nodeStatus, minerStatus, nodeLogs, minerLogs, actions, refresh };
 }

@@ -4,26 +4,38 @@ use std::{
   io::{BufRead, BufReader},
   process::{Child, Command as StdCommand, Stdio},
   sync::{
-    atomic::AtomicBool,
+    atomic::{AtomicBool, Ordering},
     Mutex,
   },
+  time::{Duration, Instant},
 };
-use tauri::{AppHandle, Emitter};
+
+use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager};
 use tokio::task::JoinHandle;
+
+#[derive(Debug, Clone)]
+pub struct ServiceConfig {
+  pub program: String,
+  pub args: Vec<String>,
+}
 
 #[derive(Default)]
 pub struct ProcState {
   pub procs: Mutex<HashMap<String, Child>>,
-
-  // Miner job-loop (Launcher-internal)
   pub miner_loop_on: AtomicBool,
   pub miner_loop_handle: Mutex<Option<JoinHandle<()>>>,
+
+  // ✅ new: restart supervisor
+  pub desired: Mutex<HashMap<String, bool>>,
+  pub configs: Mutex<HashMap<String, ServiceConfig>>,
+  pub supervisor_on: AtomicBool,
+  pub supervisor_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LogPayload {
-  pub target: String, // "node" | "miner"
-  pub stream: String, // "stdout" | "stderr" | "event"
+  pub target: String,
+  pub stream: String,
   pub line: String,
 }
 
@@ -67,6 +79,176 @@ pub fn pid_of(state: &ProcState, name: &str) -> Option<u32> {
   }
 }
 
+// ✅ desired + config
+pub async fn set_desired(state: &ProcState, name: &str, v: bool) {
+  if let Ok(mut d) = state.desired.lock() {
+    d.insert(name.to_string(), v);
+  }
+}
+
+pub async fn set_config(state: &ProcState, name: &str, program: &str, args: &[String]) {
+  if let Ok(mut c) = state.configs.lock() {
+    c.insert(
+      name.to_string(),
+      ServiceConfig {
+        program: program.to_string(),
+        args: args.to_vec(),
+      },
+    );
+  }
+}
+
+fn get_desired(state: &ProcState, name: &str) -> bool {
+  state
+    .desired
+    .lock()
+    .ok()
+    .and_then(|d| d.get(name).cloned())
+    .unwrap_or(false)
+}
+
+fn get_config(state: &ProcState, name: &str) -> Option<ServiceConfig> {
+  state
+    .configs
+    .lock()
+    .ok()
+    .and_then(|c| c.get(name).cloned())
+}
+
+fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
+  let already = state
+    .supervisor_handle
+    .lock()
+    .ok()
+    .and_then(|g| g.as_ref().map(|h| !h.is_finished()))
+    .unwrap_or(false);
+
+  if already {
+    return;
+  }
+
+  state.supervisor_on.store(true, Ordering::Relaxed);
+
+  let app2 = app.clone();
+  let state2 = state.clone();
+
+  let h = tokio::spawn(async move {
+    let mut last_restart: HashMap<String, Instant> = HashMap::new();
+    let mut crash_window: HashMap<String, (Instant, u32)> = HashMap::new();
+
+    loop {
+      if !state2.supervisor_on.load(Ordering::Relaxed) {
+        break;
+      }
+
+      for name in ["node", "miner"] {
+        let desired = get_desired(state2.as_ref(), name);
+
+        // cleanup exited children & mark uptime stopped
+        let exited = {
+          let mut map = match state2.procs.lock() {
+            Ok(m) => m,
+            Err(_) => continue,
+          };
+
+          if let Some(child) = map.get_mut(name) {
+            match child.try_wait() {
+              Ok(Some(status)) => {
+                map.remove(name);
+                Some(status.success())
+              }
+              Ok(None) => None,
+              Err(_) => {
+                map.remove(name);
+                Some(false)
+              }
+            }
+          } else {
+            None
+          }
+        };
+
+        if let Some(success) = exited {
+          let crashed = !success;
+          crate::runtime_state::mark_stopped(&app2, name, crashed);
+
+          let _ = app2.emit(
+            "sidecar:event",
+            LogPayload {
+              target: name.to_string(),
+              stream: "event".into(),
+              line: if crashed { "process exited (crash)".into() } else { "process exited".into() },
+            },
+          );
+        }
+
+        if desired && !is_running(state2.as_ref(), name) {
+          // cooldown
+          let now = Instant::now();
+          let lr = last_restart
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| now - Duration::from_secs(60));
+
+          if now.duration_since(lr) < Duration::from_millis(900) {
+            continue;
+          }
+
+          // restart limit (8 per 60s)
+          let (win_start, count) = crash_window
+            .get(name)
+            .cloned()
+            .unwrap_or((now, 0));
+
+          let (start2, count2) = if now.duration_since(win_start) > Duration::from_secs(60) {
+            (now, 0)
+          } else {
+            (win_start, count)
+          };
+
+          if count2 >= 8 {
+            // disable desired to prevent loops
+            if let Ok(mut d) = state2.desired.lock() {
+              d.insert(name.to_string(), false);
+            }
+            let _ = app2.emit(
+              "sidecar:event",
+              LogPayload {
+                target: name.to_string(),
+                stream: "event".into(),
+                line: "restart limit hit → stopping service".into(),
+              },
+            );
+            continue;
+          }
+
+          if let Some(cfg) = get_config(state2.as_ref(), name) {
+            crash_window.insert(name.to_string(), (start2, count2 + 1));
+            last_restart.insert(name.to_string(), now);
+
+            let _ = app2.emit(
+              "sidecar:event",
+              LogPayload {
+                target: name.to_string(),
+                stream: "event".into(),
+                line: "auto-restart...".into(),
+              },
+            );
+
+            let _ = spawn_sidecar(app2.clone(), state2.as_ref(), name, &cfg.program, cfg.args).await;
+          }
+        }
+      }
+
+      tokio::time::sleep(Duration::from_millis(700)).await;
+    }
+  });
+
+  if let Ok(mut g) = state.supervisor_handle.lock() {
+    *g = Some(h);
+  }
+}
+
 pub async fn spawn_sidecar(
   app: AppHandle,
   state: &ProcState,
@@ -78,8 +260,27 @@ pub async fn spawn_sidecar(
     return Ok(());
   }
 
-  let mut cmd = StdCommand::new(program);
-  cmd.args(args);
+  // ✅ Installer-safe: resolve from app resources
+  let program_path = app
+    .path()
+    .resolve(program, BaseDirectory::Resource)
+    .map_err(|e| format!("resolve resource failed: {e}"))?;
+
+  if !program_path.exists() {
+    return Err(format!("sidecar not found at: {}", program_path.display()));
+  }
+
+  let _ = app.emit(
+    "sidecar:event",
+    LogPayload {
+      target: name.to_string(),
+      stream: "event".into(),
+      line: format!("resolved path: {}", program_path.display()),
+    },
+  );
+
+  let mut cmd = StdCommand::new(program_path);
+  cmd.args(args.clone());
   cmd.stdin(Stdio::null());
   cmd.stdout(Stdio::piped());
   cmd.stderr(Stdio::piped());
@@ -94,12 +295,15 @@ pub async fn spawn_sidecar(
     map.insert(name.to_string(), child);
   }
 
+  // ✅ uptime start (persisted)
+  crate::runtime_state::mark_started(&app, name);
+
   let _ = app.emit(
     "sidecar:event",
     LogPayload {
       target: name.to_string(),
       stream: "event".into(),
-      line: "spawned".into(),
+      line: format!("spawned: {}", program),
     },
   );
 
@@ -142,6 +346,25 @@ pub async fn spawn_sidecar(
   Ok(())
 }
 
+// ✅ managed wrapper (stores config + enables auto-restart)
+pub async fn spawn_sidecar_managed(
+  app: AppHandle,
+  state_arc: std::sync::Arc<ProcState>,
+  name: &str,
+  program: &str,
+  args: Vec<String>,
+) -> Result<(), String> {
+  set_desired(state_arc.as_ref(), name, true).await;
+  set_config(state_arc.as_ref(), name, program, &args).await;
+  ensure_supervisor(app.clone(), state_arc.clone());
+  spawn_sidecar(app, state_arc.as_ref(), name, program, args).await
+}
+
+pub async fn stop_managed(app: AppHandle, state: &ProcState, name: &str) -> Result<(), String> {
+  set_desired(state, name, false).await;
+  kill_sidecar(app, state, name).await
+}
+
 pub async fn kill_sidecar(app: AppHandle, state: &ProcState, name: &str) -> Result<(), String> {
   let child_opt = {
     let mut map = state.procs.lock().map_err(|_| "lock failed".to_string())?;
@@ -151,6 +374,9 @@ pub async fn kill_sidecar(app: AppHandle, state: &ProcState, name: &str) -> Resu
   if let Some(mut child) = child_opt {
     let _ = child.kill();
     let _ = child.try_wait();
+
+    // ✅ uptime stop (manual stop = not crashed)
+    crate::runtime_state::mark_stopped(&app, name, false);
 
     let _ = app.emit(
       "sidecar:event",

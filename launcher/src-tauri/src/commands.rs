@@ -56,9 +56,9 @@ pub fn get_identity(app: AppHandle) -> IdentityResponse {
 pub async fn start_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Result<(), String> {
   let id = load_or_create_identity(&app);
 
-  sidecar::spawn_sidecar(
+  sidecar::spawn_sidecar_managed(
     app,
-    state.as_ref(),
+    state.inner().clone(),
     "node",
     "binaries/kascompute-node-x86_64-pc-windows-msvc.exe",
     vec![
@@ -71,7 +71,7 @@ pub async fn start_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Res
       "--role".into(),
       "node".into(),
       "--version".into(),
-      "0.1.0".into(),
+      "0.2.0".into(), // ✅ keep in sync if you want
     ],
   )
   .await
@@ -79,15 +79,15 @@ pub async fn start_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Res
 
 #[tauri::command]
 pub async fn stop_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Result<(), String> {
-  sidecar::kill_sidecar(app, state.as_ref(), "node").await
+  sidecar::stop_managed(app, state.as_ref(), "node").await
 }
 
 #[tauri::command]
 pub async fn start_miner(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Result<(), String> {
-  // Sidecar starten
-  sidecar::spawn_sidecar(
+  // Sidecar starten (managed => auto-restart)
+  sidecar::spawn_sidecar_managed(
     app.clone(),
-    state.as_ref(),
+    state.inner().clone(),
     "miner",
     "binaries/kascompute-miner-x86_64-pc-windows-msvc.exe",
     vec![],
@@ -106,7 +106,7 @@ pub async fn start_miner(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Re
     let api = "https://kascompute-testnet.onrender.com".to_string();
 
     let app2 = app.clone();
-    let state2: Arc<ProcState> = state.inner().clone(); // ✅ Send + 'static
+    let state2: Arc<ProcState> = state.inner().clone();
     let node_id = id.node_id;
 
     let h = tokio::spawn(async move {
@@ -129,7 +129,7 @@ pub async fn stop_miner(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Res
     }
   }
 
-  sidecar::kill_sidecar(app, state.as_ref(), "miner").await
+  sidecar::stop_managed(app, state.as_ref(), "miner").await
 }
 
 async fn miner_job_loop(app: AppHandle, state: Arc<ProcState>, api_base: String, node_id: String) {
@@ -210,7 +210,7 @@ async fn miner_job_loop(app: AppHandle, state: Arc<ProcState>, api_base: String,
       "work_units": work_units,
       "workload_mode": "sim",
       "elapsed_ms": elapsed_ms,
-      "client_version": "launcher-miner/0.1.0"
+      "client_version": "launcher-miner/0.2.0"
     });
 
     match client.post(&proof_url).json(&proof_body).send().await {
@@ -271,7 +271,7 @@ pub async fn send_heartbeat(api_base: String, payload: HeartbeatPayload) -> Resu
   let client = reqwest::Client::new();
   let resp = client
     .post(url)
-    .header("User-Agent", "kascompute-launcher/0.1.0")
+    .header("User-Agent", "kascompute-launcher/0.2.0")
     .json(&payload)
     .send()
     .await
@@ -285,3 +285,45 @@ pub async fn send_heartbeat(api_base: String, payload: HeartbeatPayload) -> Resu
 
   Ok(())
 }
+
+/* ✅ NEW: METRICS */
+
+#[derive(Serialize)]
+pub struct MetricsStatus {
+  pub node: MetricsService,
+  pub miner: MetricsService,
+}
+
+#[derive(Serialize)]
+pub struct MetricsService {
+  pub uptime: String,
+  pub crashes: u32,
+}
+
+#[tauri::command]
+pub async fn get_metrics(
+  app: AppHandle,
+  state: tauri::State<'_, std::sync::Arc<crate::sidecar::ProcState>>,
+) -> Result<MetricsStatus, String> {
+
+  let node_running = crate::sidecar::is_running(state.as_ref(), "node");
+  let miner_running = crate::sidecar::is_running(state.as_ref(), "miner");
+
+  let (node_ms, node_crashes) =
+    crate::runtime_state::get_totals_conditional(&app, "node", node_running);
+
+  let (miner_ms, miner_crashes) =
+    crate::runtime_state::get_totals_conditional(&app, "miner", miner_running);
+
+  Ok(MetricsStatus {
+    node: MetricsService {
+      uptime: crate::runtime_state::format_uptime_ms(node_ms),
+      crashes: node_crashes,
+    },
+    miner: MetricsService {
+      uptime: crate::runtime_state::format_uptime_ms(miner_ms),
+      crashes: miner_crashes,
+    },
+  })
+}
+
