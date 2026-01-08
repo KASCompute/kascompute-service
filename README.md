@@ -42,6 +42,24 @@ It explores how decentralized compute could evolve around Kaspa:
 
 ---
 
+## 🔒 Official Project Notice
+
+This repository represents the **official KASCompute project**.
+
+Official sources:
+- 🌐 Website: https://kascompute.org
+- 💻 GitHub: https://github.com/KASCompute
+- 🖥 Dashboard: https://dashboard.kascompute.org
+
+The **KASCompute name, branding, logo, and public communication**
+are **not covered by the MIT license**.
+
+Forks and modifications of the code are permitted under the MIT License,
+but **any project presenting itself as "KASCompute" without explicit approval
+is not affiliated with the official project**.
+
+---
+
 ## ⚡ Vision Architecture (vProgs Alignment)
 
 **Kaspa (Layer 1 - Settlement Layer)**
