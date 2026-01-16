@@ -10,6 +10,9 @@ import type { Config } from "@/types";
 import { useTauriLauncher } from "@/hooks/useTauriLauncher";
 
 export default function Index() {
+  // -----------------------------
+  // STATE
+  // -----------------------------
   const [activePage, setActivePage] = useState<PageType>("overview");
 
   const [cfg, setCfg] = useState<Config>({
@@ -18,8 +21,23 @@ export default function Index() {
     role: "both",
   });
 
-  const { nodeStatus, minerStatus, nodeLogs, minerLogs, actions, refresh } = useTauriLauncher();
+  // -----------------------------
+  // TAURI LAUNCHER HOOK
+  // -----------------------------
+  const {
+    nodeStatus,
+    minerStatus,
+    nodeLogs,
+    minerLogs,
+    minerProofs,
+    minerStats,
+    actions,
+    refresh,
+  } = useTauriLauncher();
 
+  // -----------------------------
+  // STATIC DATA
+  // -----------------------------
   const requiredScripts = useMemo(
     () => [
       { name: "kascompute-node.exe", present: true },
@@ -28,10 +46,19 @@ export default function Index() {
     []
   );
 
+  // -----------------------------
+  // PAGE CONTENT
+  // -----------------------------
   const content = useMemo(() => {
     switch (activePage) {
       case "overview":
-        return <OverviewPage nodeStatus={nodeStatus} minerStatus={minerStatus} actions={actions} />;
+        return (
+          <OverviewPage
+            nodeStatus={nodeStatus}
+            minerStatus={minerStatus}
+            actions={actions}
+          />
+        );
 
       case "node":
         return (
@@ -50,6 +77,8 @@ export default function Index() {
             logs={minerLogs}
             onStart={actions.startMiner}
             onStop={actions.stopMiner}
+            proofs={minerProofs}
+            stats={minerStats}
           />
         );
 
@@ -65,11 +94,30 @@ export default function Index() {
         );
 
       default:
-        // Fallback -> niemals "leer/blau"
-        return <OverviewPage nodeStatus={nodeStatus} minerStatus={minerStatus} actions={actions} />;
+        return (
+          <OverviewPage
+            nodeStatus={nodeStatus}
+            minerStatus={minerStatus}
+            actions={actions}
+          />
+        );
     }
-  }, [activePage, nodeStatus, minerStatus, nodeLogs, minerLogs, actions, cfg, requiredScripts]);
+  }, [
+    activePage,
+    nodeStatus,
+    minerStatus,
+    nodeLogs,
+    minerLogs,
+    minerProofs,
+    minerStats,
+    actions,
+    cfg,
+    requiredScripts,
+  ]);
 
+  // -----------------------------
+  // LAYOUT
+  // -----------------------------
   return (
     <Layout
       activePage={activePage}

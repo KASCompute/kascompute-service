@@ -19,6 +19,19 @@ type SidecarLogPayload = {
   line: string;
 };
 
+type MinerProofUi = {
+  node_id: string;
+  job_id: number;
+  work_units: number;
+  elapsed_ms: number;
+  workload_mode: string;
+  client_version: string;
+  ts: number;
+  proof_hash_hex: string;
+  signature_hex: string;
+  public_key_hex: string;
+};
+
 const DEFAULT_API = "https://kascompute-protocol-v1.onrender.com";
 
 function normalizeApiBase(raw?: string) {
@@ -32,14 +45,14 @@ const DEFAULT_NODE: NodeStatus = {
   pid: undefined,
   uptime: undefined,
   lastHeartbeat: undefined,
-  ...( {} as any ),
+  ...({} as any),
 };
 
 const DEFAULT_MINER: MinerStatus = {
   status: "stopped",
   pid: undefined,
   uptime: undefined,
-  ...( {} as any ),
+  ...({} as any),
 };
 
 function nowTs() {
@@ -52,12 +65,21 @@ function newId() {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function shortHex(s?: string, head = 10, tail = 8) {
+  if (!s) return "—";
+  if (s.length <= head + tail) return s;
+  return `${s.slice(0, head)}…${s.slice(-tail)}`;
+}
+
 export function useTauriLauncher() {
   const [nodeStatus, setNodeStatus] = useState<NodeStatus>(DEFAULT_NODE);
   const [minerStatus, setMinerStatus] = useState<MinerStatus>(DEFAULT_MINER);
 
   const [nodeLogs, setNodeLogs] = useState<LogEntry[]>([]);
   const [minerLogs, setMinerLogs] = useState<LogEntry[]>([]);
+
+  // ✅ Miner proofs (structured)
+  const [minerProofs, setMinerProofs] = useState<MinerProofUi[]>([]);
 
   // ✅ API Base (Render)
   const apiBase = normalizeApiBase(import.meta.env.VITE_API_BASE);
@@ -159,7 +181,7 @@ export function useTauriLauncher() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  // ✅ Live logs via events
+  // ✅ Live logs via events + Profi heartbeat derived from node output
   useEffect(() => {
     if (!isTauri()) return;
 
@@ -172,17 +194,20 @@ export function useTauriLauncher() {
       return "info";
     };
 
+    const isHeartbeatLine = (line: string) =>
+      /\bkascompute-node\b.*\bheartbeat\b/i.test(line) || /\bheartbeat\s+OK\b/i.test(line);
+
     const subscribe = async () => {
       try {
         const handler = (payload: any) => {
           if (!alive) return;
+
           const p = payload as SidecarLogPayload;
           if (!p?.target || !p?.stream) return;
 
           const line = String(p.line ?? "");
 
-          // ✅ Profi: lastHeartbeat wird aus node-sidecar Output abgeleitet
-          if (p.target === "node" && /heartbeat\s+OK/i.test(line)) {
+          if (p.target === "node" && isHeartbeatLine(line)) {
             setNodeStatus((s) => ({ ...s, lastHeartbeat: "just now" }));
           }
 
@@ -216,7 +241,48 @@ export function useTauriLauncher() {
     };
   }, [pushLog]);
 
-  // ✅ Load identity once (from Rust)
+  // ✅ Miner proof events (structured for UI)
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let alive = true;
+    let unlisten: null | (() => void) = null;
+
+    (async () => {
+      try {
+        unlisten = await listen("miner:proof", (e) => {
+          if (!alive) return;
+          const p = e.payload as MinerProofUi;
+          if (!p?.job_id) return;
+
+          setMinerProofs((prev) => {
+            const next = [...prev, p];
+            return next.length > 200 ? next.slice(next.length - 200) : next;
+          });
+
+          // also push one human-friendly line into miner logs
+          pushLog({
+            id: newId(),
+            target: "miner",
+            level: "info",
+            timestamp: nowTs(),
+            message: `signed proof job=${p.job_id} hash=${shortHex(p.proof_hash_hex)} sig=${shortHex(p.signature_hex)}`,
+          });
+        });
+      } catch (err) {
+        console.error("Failed to listen miner:proof", err);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      try {
+        unlisten?.();
+      } catch {}
+    };
+  }, [pushLog]);
+
+  // ✅ Load identity once (keep for later / UI)
   useEffect(() => {
     if (!isTauri()) return;
 
@@ -239,76 +305,36 @@ export function useTauriLauncher() {
     })();
   }, [pushLog]);
 
-  // ✅ uptime baseline for heartbeat (persisted while app runs)
-  const startedAtMsRef = useRef<number>(Date.now());
+  // ✅ Miner stats
+  const minerStats = useMemo(() => {
+    if (!minerProofs.length) {
+      return {
+        proofs: 0,
+        avgElapsedMs: 0,
+        avgWU: 0,
+        wuPerSec: 0,
+        lastProofTs: null as number | null,
+      };
+    }
 
-  // ✅ HEARTBEAT LOOP (läuft wenn Node ODER Miner läuft)
-  useEffect(() => {
-    if (!isTauri()) return;
+    const n = minerProofs.length;
+    const last = minerProofs[n - 1];
+    const sumElapsed = minerProofs.reduce((a, x) => a + (x.elapsed_ms || 0), 0);
+    const sumWU = minerProofs.reduce((a, x) => a + (x.work_units || 0), 0);
+    const avgElapsedMs = Math.round(sumElapsed / n);
+    const avgWU = Math.round(sumWU / n);
 
-    const shouldSend = nodeStatus.status === "running" || minerStatus.status === "running";
-    if (!shouldSend) return;
+    const sumSec = sumElapsed / 1000;
+    const wuPerSec = sumSec > 0 ? Math.round(sumWU / sumSec) : 0;
 
-    let stopped = false;
-
-    const tick = async () => {
-      try {
-        // ensure identity exists
-        if (!identityRef.current) {
-          const id = await safeInvoke<{ node_id: string; public_key_hex: string }>("get_identity");
-          if (id?.node_id && id?.public_key_hex) {
-            identityRef.current = id;
-            startedAtMsRef.current = Date.now();
-          }
-        }
-
-        const id = identityRef.current;
-        if (!id) return;
-
-        // protocol-v1 roles[]
-        const roles =
-          nodeStatus.status === "running" && minerStatus.status === "running"
-            ? ["node", "miner"]
-            : nodeStatus.status === "running"
-            ? ["node"]
-            : ["miner"];
-
-        // ✅ IMPORTANT: Tauri command erwartet api_base (snake_case) + payload
-await safeInvoke("send_heartbeat", {
-  args: {
-    api_base: apiBase,
-    payload: {
-      node_id: id.node_id,
-      public_key_hex: id.public_key_hex,
-      roles,
-      client_version: "launcher/0.2.0",
-      uptime_sec: Math.floor((Date.now() - startedAtMsRef.current) / 1000),
-    },
-  },
-});
-
-      } catch (e) {
-        pushLog({
-          id: newId(),
-          target: "node",
-          level: "warn",
-          timestamp: nowTs(),
-          message: `heartbeat failed: ${String(e)}`,
-        });
-      }
+    return {
+      proofs: n,
+      avgElapsedMs,
+      avgWU,
+      wuPerSec,
+      lastProofTs: last?.ts ?? null,
     };
-
-    tick();
-
-    const t = setInterval(() => {
-      if (!stopped) tick();
-    }, 8000);
-
-    return () => {
-      stopped = true;
-      clearInterval(t);
-    };
-  }, [apiBase, nodeStatus.status, minerStatus.status, pushLog]);
+  }, [minerProofs]);
 
   const actions = useMemo(() => {
     const requireTauri = () => {
@@ -328,7 +354,6 @@ await safeInvoke("send_heartbeat", {
         setNodeStatus((p) => ({ ...p, status: "starting" }));
 
         try {
-          startedAtMsRef.current = Date.now();
           await safeInvoke("start_node");
         } catch (e) {
           console.error("start_node failed", e);
@@ -365,7 +390,6 @@ await safeInvoke("send_heartbeat", {
         busyRef.current = true;
 
         try {
-          startedAtMsRef.current = Date.now();
           await safeInvoke("start_miner");
         } catch (e) {
           console.error("start_miner failed", e);
@@ -394,7 +418,16 @@ await safeInvoke("send_heartbeat", {
         }
       },
     };
-  }, [refresh, busy, apiBase]);
+  }, [refresh, busy]);
 
-  return { nodeStatus, minerStatus, nodeLogs, minerLogs, actions, refresh };
+  return {
+    nodeStatus,
+    minerStatus,
+    nodeLogs,
+    minerLogs,
+    minerProofs,
+    minerStats,
+    actions,
+    refresh,
+  };
 }

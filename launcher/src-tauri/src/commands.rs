@@ -2,11 +2,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{sync::Arc, time::Instant};
 use std::sync::atomic::Ordering;
+
 use tauri::{AppHandle, Emitter, State};
 use tokio::time::{sleep, Duration};
 
 use crate::identity::load_or_create_identity;
 use crate::sidecar::{self, ProcState};
+
+// ✅ crypto
+use sha2::{Digest, Sha256};
+use ed25519_dalek::{Signer, SigningKey};
 
 #[derive(Debug, Deserialize)]
 struct NextJobResponse {
@@ -71,7 +76,7 @@ pub async fn start_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Res
       "--role".into(),
       "node".into(),
       "--version".into(),
-      "0.2.0".into(), // ✅ keep in sync if you want
+      "0.2.0".into(),
     ],
   )
   .await
@@ -80,6 +85,35 @@ pub async fn start_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Res
 #[tauri::command]
 pub async fn stop_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Result<(), String> {
   sidecar::stop_managed(app, state.as_ref(), "node").await
+}
+
+/* =========================
+   MINER (Protocol-v1) + Proof "Profi"
+   ========================= */
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProofPayloadToSign {
+  pub node_id: String,
+  pub job_id: u64,
+  pub work_units: u64,
+  pub workload_mode: String,
+  pub elapsed_ms: u64,
+  pub client_version: String,
+  pub ts: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MinerProofUi {
+  pub node_id: String,
+  pub job_id: u64,
+  pub work_units: u64,
+  pub elapsed_ms: u64,
+  pub workload_mode: String,
+  pub client_version: String,
+  pub ts: u64,
+  pub proof_hash_hex: String,
+  pub signature_hex: String,
+  pub public_key_hex: String,
 }
 
 #[tauri::command]
@@ -103,18 +137,20 @@ pub async fn start_miner(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Re
 
   if !already_running {
     let id = load_or_create_identity(&app);
+
     let api = std::env::var("KASCOMPUTE_API")
-    .or_else(|_| std::env::var("VITE_SIDECAR_API"))
-    .unwrap_or_else(|_| "https://kascompute-protocol-v1.onrender.com".to_string());
-
-
+      .or_else(|_| std::env::var("VITE_SIDECAR_API"))
+      .unwrap_or_else(|_| "https://kascompute-protocol-v1.onrender.com".to_string());
 
     let app2 = app.clone();
     let state2: Arc<ProcState> = state.inner().clone();
-    let node_id = id.node_id;
+
+    let node_id = id.node_id.clone();
+    let public_key_hex = id.public_key_hex.clone();
+    let private_key_hex = id.private_key_hex.clone();
 
     let h = tokio::spawn(async move {
-      miner_job_loop(app2, state2, api, node_id).await;
+      miner_job_loop(app2, state2, api, node_id, public_key_hex, private_key_hex).await;
     });
 
     *g = Some(h);
@@ -136,7 +172,14 @@ pub async fn stop_miner(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Res
   sidecar::stop_managed(app, state.as_ref(), "miner").await
 }
 
-async fn miner_job_loop(app: AppHandle, state: Arc<ProcState>, api_base: String, node_id: String) {
+async fn miner_job_loop(
+  app: AppHandle,
+  state: Arc<ProcState>,
+  api_base: String,
+  node_id: String,
+  public_key_hex: String,
+  private_key_hex: String,
+) {
   let client = reqwest::Client::new();
   let base = api_base.trim_end_matches('/').to_string();
 
@@ -207,14 +250,57 @@ async fn miner_job_loop(app: AppHandle, state: Arc<ProcState>, api_base: String,
     sleep(Duration::from_millis(150)).await;
     let elapsed_ms = t0.elapsed().as_millis() as u64;
 
+    // ✅ timestamp
+    let ts = (std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .unwrap_or_default()
+      .as_secs()) as u64;
+
+    // ✅ payload to sign
+    let payload_to_sign = ProofPayloadToSign {
+      node_id: node_id.clone(),
+      job_id,
+      work_units,
+      workload_mode: "sim".to_string(),
+      elapsed_ms,
+      client_version: "launcher-miner/0.2.0".to_string(),
+      ts,
+    };
+
+    // ✅ canonical bytes
+    let payload_bytes = serde_json::to_vec(&payload_to_sign).unwrap_or_default();
+
+    // ✅ sha256(payload_bytes)
+    let hash = Sha256::digest(&payload_bytes);
+    let proof_hash_hex = hex::encode(hash);
+
+    // ✅ ed25519 sign(hash_bytes)
+    let sk_bytes_vec = hex::decode(&private_key_hex).unwrap_or_default();
+    let mut signature_hex = "00".to_string();
+    if sk_bytes_vec.len() == 32 {
+      let mut sk_bytes = [0u8; 32];
+      sk_bytes.copy_from_slice(&sk_bytes_vec[..32]);
+
+      let signing = SigningKey::from_bytes(&sk_bytes);
+      let sig = signing.sign(hash.as_slice());
+      signature_hex = hex::encode(sig.to_bytes());
+    }
+
     let proof_url = format!("{}/jobs/proof", base);
+
+    // ✅ send to backend (extra fields are ok)
     let proof_body = json!({
-      "node_id": node_id,
-      "job_id": job_id,
-      "work_units": work_units,
-      "workload_mode": "sim",
-      "elapsed_ms": elapsed_ms,
-      "client_version": "launcher-miner/0.2.0"
+      "node_id": payload_to_sign.node_id,
+      "job_id": payload_to_sign.job_id,
+      "work_units": payload_to_sign.work_units,
+      "workload_mode": payload_to_sign.workload_mode,
+      "elapsed_ms": payload_to_sign.elapsed_ms,
+      "client_version": payload_to_sign.client_version,
+      "ts": payload_to_sign.ts,
+
+      "proof_hash": proof_hash_hex,
+      "signature": signature_hex,
+      "public_key_hex": public_key_hex,
     });
 
     match client.post(&proof_url).json(&proof_body).send().await {
@@ -224,6 +310,22 @@ async fn miner_job_loop(app: AppHandle, state: Arc<ProcState>, api_base: String,
           stream: "stdout".into(),
           line: format!("proof ok job={} wu={} elapsed={}ms", job_id, work_units, elapsed_ms),
         });
+
+        // ✅ structured UI event
+        let ui = MinerProofUi {
+          node_id: node_id.clone(),
+          job_id,
+          work_units,
+          elapsed_ms,
+          workload_mode: "sim".to_string(),
+          client_version: "launcher-miner/0.2.0".to_string(),
+          ts,
+          proof_hash_hex: proof_hash_hex.clone(),
+          signature_hex: signature_hex.clone(),
+          public_key_hex: public_key_hex.clone(),
+        };
+
+        let _ = app.emit("miner:proof", ui);
       }
       Ok(r) => {
         let status = r.status();
@@ -253,7 +355,9 @@ async fn miner_job_loop(app: AppHandle, state: Arc<ProcState>, api_base: String,
   });
 }
 
-/* HEARTBEAT (Protocol V1) */
+/* =========================
+   HEARTBEAT (Protocol V1)
+   ========================= */
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatPayload {
@@ -280,7 +384,7 @@ pub async fn send_heartbeat(args: SendHeartbeatArgs) -> Result<(), String> {
   // apiBase kann "…/v1" oder "…" sein → wir normalisieren auf ROOT ohne /v1
   let mut base = args.api_base.trim_end_matches('/').to_string();
   if base.ends_with("/v1") {
-    base.truncate(base.len() - 3); // remove trailing "/v1"
+    base.truncate(base.len().saturating_sub(3)); // remove trailing "/v1"
   }
 
   let url = format!("{}/v1/nodes/heartbeat", base);
@@ -303,10 +407,9 @@ pub async fn send_heartbeat(args: SendHeartbeatArgs) -> Result<(), String> {
   Ok(())
 }
 
-
-
-
-/*  NEW: METRICS */
+/* =========================
+   METRICS
+   ========================= */
 
 #[derive(Serialize)]
 pub struct MetricsStatus {
@@ -325,7 +428,6 @@ pub async fn get_metrics(
   app: AppHandle,
   state: tauri::State<'_, std::sync::Arc<crate::sidecar::ProcState>>,
 ) -> Result<MetricsStatus, String> {
-
   let node_running = crate::sidecar::is_running(state.as_ref(), "node");
   let miner_running = crate::sidecar::is_running(state.as_ref(), "miner");
 
@@ -346,4 +448,3 @@ pub async fn get_metrics(
     },
   })
 }
-
