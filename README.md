@@ -1,4 +1,3 @@
-
 <p align="center">
   <img src="assets/kascompute-banner-animated-v2.gif" width="100%" />
 </p>
@@ -6,7 +5,7 @@
 <h1 align="center">⚡ KASCompute — Off-Chain Compute Layer aligned for Kaspa vProgs</h1>
 
 <p align="center">
-  <strong>Proof-of-Compute • Real-Time Nodes • Future vProgs Settlement • Kaspa BlockDAG Native</strong>
+  <strong>Cryptographic Proof-of-Compute • Real-Time Nodes • vProgs-Aligned • Kaspa BlockDAG Native</strong>
 </p>
 
 <p align="center">
@@ -17,7 +16,7 @@
     <img src="https://img.shields.io/github/issues/KASCompute/kascompute-service?style=flat"/>
   </a>
   <img src="https://img.shields.io/badge/Rust-1.74%2B-brown"/>
-  <img src="https://img.shields.io/badge/Axum-0.7-blue"/>
+  <img src="https://img.shields.io/badge/Tauri-Desktop-blue"/>
   <img src="https://img.shields.io/badge/Kaspa-BlockDAG-00E3C0"/>
   <img src="https://img.shields.io/badge/License-MIT-yellow"/>
 </p>
@@ -26,19 +25,31 @@
 
 ## 🧬 What is KASCompute?
 
-**KASCompute** is an off-chain compute layer prototype designed to integrate with **Kaspa’s future vProgs settlement layer.**
+**KASCompute** is an experimental **off-chain compute layer** designed to align with  
+**Kaspa’s upcoming vProgs execution and settlement model**.
 
-It explores how decentralized compute could evolve around Kaspa:
+It explores how decentralized compute can be:
+- **measured**
+- **proven cryptographically**
+- **tracked in real-time**
+- and later **settled on Kaspa**
 
-- ⚙️ Node heartbeat & hardware profiles
-- 📡 Job execution & workload simulation
-- 🔐 Proof-of-Compute submissions
-- 🧮 Reward engine (KCT emission model)
-- 📊 Global state dashboard in real-time
-- 🧱 Future: vProgs anchoring for trustless settlement
+### What already works today
 
-> **Running today:** off-chain proof validation & state tracking  
-> **Goal:** settlement through vProgs once live on Kaspa  
+-⚙️ Node & miner processes (desktop launcher)
+- 📡 Heartbeat-based presence (single source of truth)
+- 🧮 Job scheduling (`/jobs/next`)
+- 🔐 **Cryptographic Proof-of-Compute**
+  - deterministic payload
+  - SHA-256 hash
+  - Ed25519 signature
+- 📤 Proof submission (`/jobs/proof`)
+- 🖥 Live dashboard (nodes, uptime, proofs)
+- 📊 Structured miner proofs streamed into UI
+
+> **Important:**  
+> All cryptography is real.  
+> Proofs are hashable, signable, and verifiable.
 
 ---
 
@@ -47,122 +58,133 @@ It explores how decentralized compute could evolve around Kaspa:
 This repository represents the **official KASCompute project**.
 
 Official sources:
-- 🌐 Website: https://kascompute.org
-- 💻 GitHub: https://github.com/KASCompute
-- 🖥 Dashboard: https://dashboard.kascompute.org
+- 🌐 Website: https://kascompute.org  
+- 💻 GitHub: https://github.com/KASCompute  
+- 🖥 Dashboard: https://dashboard.kascompute.org  
 
-The **KASCompute name, branding, logo, and public communication**
+The **KASCompute name, logo, branding, and public communication**
 are **not covered by the MIT license**.
 
-Forks and modifications of the code are permitted under the MIT License,
-but **any project presenting itself as "KASCompute" without explicit approval
-is not affiliated with the official project**.
+Forking the code is allowed, but **claiming affiliation with KASCompute is not**.
 
 ---
 
-## ⚡ Vision Architecture (vProgs Alignment)
+## ⚡ Architecture Overview (vProgs Alignment)
 
-**Kaspa (Layer 1 - Settlement Layer)**
-- Finality, Security, BlockDAG
+Kaspa L1 (BlockDAG)
+└─ Finality & Security
 
-**vProgs (Future Execution Layer)**
-- ZK Verification
-- Conditional Logic
-- Proof Anchoring (future settlement target)
+vProgs (Future Execution Layer)
+└─ Proof Anchoring
+└─ Conditional Settlement
 
-**KASCompute (Off-Chain Compute Layer - Today)**
-- Proof-of-Compute (PoC)
-- State & Reward Engine
-- Job Scheduling / Nodes
+KASCompute (Off-Chain Layer)
+├─ Node Heartbeats
+├─ Job Scheduling
+├─ Proof-of-Compute
+├─ Reward / Metrics Engine
+└─ Desktop Launcher (Tauri)
 
-**Compute Nodes**
-- CPU/GPU Workload
-- Heartbeat → Proof Submission
 
-🔹 **Today:** Off-chain prototype  
-🔹 **Future:** Settlement via vProgs on Kaspa.   
+🔹 **Today:** off-chain R&D prototype  
+🔹 **Future:** trust-minimized settlement via vProgs
+
+---
+
+## 🔐 Proof-of-Compute (Current Design)
+
+Each compute proof consists of:
+
+- Deterministic payload
+- SHA-256 hash of payload
+- Ed25519 signature over hash
+- Public key of node identity
+
+This allows:
+- offline verification
+- replay protection
+- future on-chain anchoring
+
+> No ZK yet.  
+> Designed to be **ZK-ready** once vProgs is live.
 
 ---
 
 ## 💠 KCT Emission Model (Concept)
 
-| Parameter       | Value                |
-|-----------------|----------------------|
-| Supply          | 10B KCT              |
-| Mining          | 9B (90%)             |
-| Treasury        | 1B (10%)             |
-| Start Reward    | 200 KCT / block      |
-| Decay Rate      | 1% monthly           |
-| Duration        | ~14 years            |
+| Parameter       | Value            |
+|-----------------|------------------|
+| Total Supply    | 10B KCT          |
+| Mining          | 9B (90%)         |
+| Treasury        | 1B (10%)         |
+| Start Reward    | 200 KCT / block  |
+| Decay           | 1% monthly       |
+| Duration        | ~14 years        |
 
-R(m) = 200 * 0.99^(m - 1)
+Formula:R(m) = 200 * 0.99^(m - 1)
+
 
 ---
 
-## 🖥 Live Dashboard Prototype
+## 🖥 Live Dashboard (Prototype)
+
 🔗 https://dashboard.kascompute.org
 
-- Active nodes & uptime
-- Proof-of-Compute feed
-- Work units & reward estimation
-- Emission / treasury modeling
-- Leaderboard & global metrics
+- Node presence & uptime
+- Proof stream (real cryptographic data)
+- Work units & performance
+- Emission modeling
+- Leaderboards
 
-> Prototype. Not mainnet. Parameters may evolve with vProgs.
-
----
-
-## 🔌 API (Prototype Stage)
-
-GET  /health POST /reward/preview GET  /emission/monthly GET  /investor/value_flow
+> Prototype. Parameters may evolve.
 
 ---
 
-## 🏗 Project Structure
+## 🏗 Repository Structure
 
 kascompute-service/
-- src/                          # Core Rust backend
-  - coordinator.rs              # API, jobs, PoC, scheduling
-  - state.rs                    # global state, nodes, rewards
-  - proof.rs                    # proof-of-compute logic
-- testnet-launcher/             # live test environment
-  - src/main.rs                 # coordinator (Render deployment)
-  - public/                     # dashboard (index/app/style)
-- assets/                       # banners, diagrams, logo
-- scripts/                      # deployment & tooling
-- docs/                         # vProgs research & architecture notes
+├─ launcher/ # Tauri desktop launcher (Node + Miner)
+├─ protocol-v1/ # Protocol V1 backend & API
+├─ assets/ # Branding, banners, diagrams
+├─ docs/ # Architecture & research notes
+└─ scripts/ # Tooling & deployment helpers
 
+
+Each major component is developed independently but aligned by protocol.
+
+---
 
 ## 🚀 Roadmap
 
 ### 🟢 Current
-- PoC engine (off-chain)
-- Node heartbeat tracking
-- Reward & emission model
+- Protocol V1 live
+- Cryptographic PoC
+- Desktop launcher
 - Real-time dashboard
-- vProgs alignment phase started
 
 ### 🟡 Next
-- Node scoring system
-- Job routing / scheduling logic
-- Draft ZK-proof structure
-- Developer SDK / client lib
+- Proof verification endpoints
+- Node scoring & reputation
+- Job pricing & fairness
+- Developer documentation
 
-### 🟣 Future (vProgs Era)
-- Proof anchoring → vProgs
-- Settlement → Kaspa BlockDAG
-- Trustless compute lifecycle
+### 🟣 Future (vProgs)
+- Proof anchoring
+- On-chain settlement
+- Trust-minimized compute lifecycle
 
 ---
 
-## ⚠️ Disclaimer
-R&D prototype. Not financial advice.  
-No guarantee of future economics or performance.  
-Integration with vProgs depends on official release timing.
+##⚠️ Disclaimer
+
+Research prototype.  
+Not financial advice.  
+No guarantee of economics or timelines.
 
 ---
 
 ## 📫 Contact
+
 🌐 https://kascompute.org  
 🐦 https://x.com/KASCompute  
 💬 https://t.me/KASCompute  
