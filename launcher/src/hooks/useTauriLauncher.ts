@@ -19,12 +19,19 @@ type SidecarLogPayload = {
   line: string;
 };
 
+const DEFAULT_API = "https://kascompute-protocol-v1.onrender.com";
+
+function normalizeApiBase(raw?: string) {
+  let base = (raw || DEFAULT_API).trim().replace(/\/+$/, "");
+  if (!base.endsWith("/v1")) base += "/v1";
+  return base;
+}
+
 const DEFAULT_NODE: NodeStatus = {
   status: "stopped",
   pid: undefined,
   uptime: undefined,
   lastHeartbeat: undefined,
-  // crashes optional (falls type es hat)
   ...( {} as any ),
 };
 
@@ -53,11 +60,11 @@ export function useTauriLauncher() {
   const [minerLogs, setMinerLogs] = useState<LogEntry[]>([]);
 
   // ✅ API Base (Render)
-  const apiBase = "https://kascompute-testnet.onrender.com";
+  const apiBase = normalizeApiBase(import.meta.env.VITE_API_BASE);
 
   // verhindert parallele Calls
   const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false); // nur als Mutex für refresh/poll, nicht fürs UI
+  const busyRef = useRef(false); // Mutex für refresh/poll (nicht fürs UI)
 
   // Identity cache (kommt aus Rust get_identity)
   const identityRef = useRef<{ node_id: string; public_key_hex: string } | null>(null);
@@ -85,12 +92,10 @@ export function useTauriLauncher() {
         ...p,
         status: "running",
         pid: (s.node.pid ?? undefined) as any,
-        // ✅ uptime/crashes aus metrics (wenn vorhanden)
         uptime: m?.node?.uptime ?? p.uptime,
         ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
       }));
     } else {
-      // wenn stopped: uptime trotzdem anzeigen lassen (persistente totals)
       setNodeStatus((p) => ({
         ...DEFAULT_NODE,
         status: "stopped",
@@ -120,18 +125,14 @@ export function useTauriLauncher() {
 
   const refresh = useCallback(async () => {
     if (!isTauri()) return;
-
-    // polling darf skippen, aber UI darf nicht blockieren
     if (busyRef.current) return;
 
     busyRef.current = true;
     try {
-      // ✅ parallel status + metrics
       const [s, m] = await Promise.all([
         safeInvoke<BackendStatus>("get_status"),
         safeInvoke<MetricsStatus>("get_metrics"),
       ]);
-
       if (s) apply(s, m ?? null);
     } catch (e) {
       console.error("refresh failed", e);
@@ -178,12 +179,19 @@ export function useTauriLauncher() {
           const p = payload as SidecarLogPayload;
           if (!p?.target || !p?.stream) return;
 
+          const line = String(p.line ?? "");
+
+          // ✅ Profi: lastHeartbeat wird aus node-sidecar Output abgeleitet
+          if (p.target === "node" && /heartbeat\s+OK/i.test(line)) {
+            setNodeStatus((s) => ({ ...s, lastHeartbeat: "just now" }));
+          }
+
           pushLog({
             id: newId(),
             target: p.target,
             level: levelFromStream(p.stream),
             timestamp: nowTs(),
-            message: String(p.line ?? ""),
+            message: line,
           });
         };
 
@@ -231,6 +239,9 @@ export function useTauriLauncher() {
     })();
   }, [pushLog]);
 
+  // ✅ uptime baseline for heartbeat (persisted while app runs)
+  const startedAtMsRef = useRef<number>(Date.now());
+
   // ✅ HEARTBEAT LOOP (läuft wenn Node ODER Miner läuft)
   useEffect(() => {
     if (!isTauri()) return;
@@ -245,30 +256,37 @@ export function useTauriLauncher() {
         // ensure identity exists
         if (!identityRef.current) {
           const id = await safeInvoke<{ node_id: string; public_key_hex: string }>("get_identity");
-          if (id?.node_id && id?.public_key_hex) identityRef.current = id;
+          if (id?.node_id && id?.public_key_hex) {
+            identityRef.current = id;
+            startedAtMsRef.current = Date.now();
+          }
         }
+
         const id = identityRef.current;
         if (!id) return;
 
-        const role =
+        // protocol-v1 roles[]
+        const roles =
           nodeStatus.status === "running" && minerStatus.status === "running"
-            ? "both"
+            ? ["node", "miner"]
             : nodeStatus.status === "running"
-            ? "node"
-            : "miner";
+            ? ["node"]
+            : ["miner"];
 
-        await safeInvoke("send_heartbeat", {
-          apiBase,
-          payload: {
-            node_id: id.node_id,
-            public_key_hex: id.public_key_hex,
-            role,
-            launcher_version: "0.2.0",
-            // Geo absichtlich leer → Backend macht lookup
-          },
-        });
+        // ✅ IMPORTANT: Tauri command erwartet api_base (snake_case) + payload
+await safeInvoke("send_heartbeat", {
+  args: {
+    api_base: apiBase,
+    payload: {
+      node_id: id.node_id,
+      public_key_hex: id.public_key_hex,
+      roles,
+      client_version: "launcher/0.2.0",
+      uptime_sec: Math.floor((Date.now() - startedAtMsRef.current) / 1000),
+    },
+  },
+});
 
-        setNodeStatus((p) => ({ ...p, lastHeartbeat: "just now" }));
       } catch (e) {
         pushLog({
           id: newId(),
@@ -310,6 +328,7 @@ export function useTauriLauncher() {
         setNodeStatus((p) => ({ ...p, status: "starting" }));
 
         try {
+          startedAtMsRef.current = Date.now();
           await safeInvoke("start_node");
         } catch (e) {
           console.error("start_node failed", e);
@@ -346,6 +365,7 @@ export function useTauriLauncher() {
         busyRef.current = true;
 
         try {
+          startedAtMsRef.current = Date.now();
           await safeInvoke("start_miner");
         } catch (e) {
           console.error("start_miner failed", e);
@@ -374,7 +394,7 @@ export function useTauriLauncher() {
         }
       },
     };
-  }, [refresh, busy]);
+  }, [refresh, busy, apiBase]);
 
   return { nodeStatus, minerStatus, nodeLogs, minerLogs, actions, refresh };
 }

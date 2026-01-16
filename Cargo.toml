@@ -23,7 +23,7 @@ hex = "0.4"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 
 [workspace]
-members = ["testnet-launcher", "testnet-launcher-pro"]
+members = ["launcher/sidecars/kascompute-sidecars","testnet-launcher", "testnet-launcher-pro"]
 resolver = "2"
 exclude = ["launcher/src-tauri",]
 

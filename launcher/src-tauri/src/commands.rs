@@ -63,7 +63,7 @@ pub async fn start_node(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Res
     "binaries/kascompute-node-x86_64-pc-windows-msvc.exe",
     vec![
       "--endpoint".into(),
-      "https://kascompute-testnet.onrender.com".into(),
+      "https://kascompute-protocol-v1.onrender.com".into(),
       "--node-id".into(),
       id.node_id,
       "--pubkey".into(),
@@ -103,7 +103,11 @@ pub async fn start_miner(app: AppHandle, state: State<'_, Arc<ProcState>>) -> Re
 
   if !already_running {
     let id = load_or_create_identity(&app);
-    let api = "https://kascompute-testnet.onrender.com".to_string();
+    let api = std::env::var("KASCOMPUTE_API")
+    .or_else(|_| std::env::var("VITE_SIDECAR_API"))
+    .unwrap_or_else(|_| "https://kascompute-protocol-v1.onrender.com".to_string());
+
+
 
     let app2 = app.clone();
     let state2: Arc<ProcState> = state.inner().clone();
@@ -249,30 +253,43 @@ async fn miner_job_loop(app: AppHandle, state: Arc<ProcState>, api_base: String,
   });
 }
 
-/* HEARTBEAT */
+/* HEARTBEAT (Protocol V1) */
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatPayload {
   pub node_id: String,
   pub public_key_hex: String,
-  #[serde(default)] pub role: Option<String>,
-  #[serde(default)] pub launcher_version: Option<String>,
-  #[serde(default)] pub uptime_sec: Option<u64>,
-  #[serde(default)] pub latitude: Option<f64>,
-  #[serde(default)] pub longitude: Option<f64>,
-  #[serde(default)] pub country: Option<String>,
+
+  // protocol-v1 fields
+  pub roles: Vec<String>,             // ["node"] / ["miner"] / ["node","miner"]
+  pub client_version: Option<String>, // e.g. "launcher/0.2.0"
+  pub uptime_sec: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SendHeartbeatArgs {
+  // akzeptiert apiBase (frontend) ODER api_base (snake)
+  #[serde(alias = "apiBase")]
+  pub api_base: String,
+
+  pub payload: HeartbeatPayload,
 }
 
 #[tauri::command]
-pub async fn send_heartbeat(api_base: String, payload: HeartbeatPayload) -> Result<(), String> {
-  let base = api_base.trim_end_matches('/').to_string();
-  let url = format!("{}/node/heartbeat", base);
+pub async fn send_heartbeat(args: SendHeartbeatArgs) -> Result<(), String> {
+  // apiBase kann "…/v1" oder "…" sein → wir normalisieren auf ROOT ohne /v1
+  let mut base = args.api_base.trim_end_matches('/').to_string();
+  if base.ends_with("/v1") {
+    base.truncate(base.len() - 3); // remove trailing "/v1"
+  }
+
+  let url = format!("{}/v1/nodes/heartbeat", base);
 
   let client = reqwest::Client::new();
   let resp = client
-    .post(url)
+    .post(&url)
     .header("User-Agent", "kascompute-launcher/0.2.0")
-    .json(&payload)
+    .json(&args.payload)
     .send()
     .await
     .map_err(|e| format!("heartbeat send failed: {e}"))?;
@@ -286,7 +303,10 @@ pub async fn send_heartbeat(api_base: String, payload: HeartbeatPayload) -> Resu
   Ok(())
 }
 
-/* ✅ NEW: METRICS */
+
+
+
+/*  NEW: METRICS */
 
 #[derive(Serialize)]
 pub struct MetricsStatus {

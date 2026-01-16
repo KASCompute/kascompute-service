@@ -36,6 +36,8 @@ node-identity.json
 node-config.yaml
 *.key
 *.pem
+launcher/dist/
+
 
 # KASCompute sensitive node files
 configs/node-identity.json
@@ -63,3 +65,15 @@ node_id.txt
 pro_node*_key.txt
 
 .tmp.driveupload/
+
+# Tauri / Rust build artifacts
+target/
+**/target/
+
+# Tauri sidecars / binaries
+launcher/src-tauri/binaries/
+launcher/sidecars/
+
+# Windows binaries
+*.exe
+

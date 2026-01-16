@@ -279,13 +279,54 @@ pub async fn spawn_sidecar(
     },
   );
 
-  let mut cmd = StdCommand::new(program_path);
-  cmd.args(args.clone());
-  cmd.stdin(Stdio::null());
-  cmd.stdout(Stdio::piped());
-  cmd.stderr(Stdio::piped());
+let mut cmd = StdCommand::new(program_path);
 
-  let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+cmd.args(args.clone());
+cmd.stdin(Stdio::null());
+cmd.stdout(Stdio::piped());
+cmd.stderr(Stdio::piped());
+
+// ✅ Sidecar API (PRO)
+// Priority:
+// 1) KASCOMPUTE_API
+// 2) VITE_SIDECAR_API
+// 3) VITE_API_BASE
+// 4) hard default
+let api = std::env::var("KASCOMPUTE_API")
+    .ok()
+    .filter(|s| !s.trim().is_empty())
+    .or_else(|| {
+        std::env::var("VITE_SIDECAR_API")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+    })
+    .or_else(|| {
+        std::env::var("VITE_API_BASE")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+    })
+    .unwrap_or_else(|| "https://kascompute-protocol-v1.onrender.com".to_string());
+
+// pass to sidecars (base url!)
+cmd.env("KASCOMPUTE_API", api.clone());
+
+
+  // Optional: make sidecar logs readable
+  cmd.env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()));
+
+  // Log which API is used (shows in your UI log stream)
+  let _ = app.emit(
+    "sidecar:event",
+    LogPayload {
+      target: name.to_string(),
+      stream: "event".into(),
+      line: format!("api for sidecar: {}", api),
+    },
+  );
+
+  let mut child = cmd
+    .spawn()
+    .map_err(|e| format!("spawn failed: {e}"))?;
 
   let stdout = child.stdout.take();
   let stderr = child.stderr.take();
@@ -306,6 +347,8 @@ pub async fn spawn_sidecar(
       line: format!("spawned: {}", program),
     },
   );
+
+
 
   if let Some(out) = stdout {
     let app_clone = app.clone();
