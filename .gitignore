@@ -82,3 +82,8 @@ launcher/sidecars/
 launcher/.vs/
 .vs/
 
+# Tauri sidecar binaries (do not commit)
+launcher/src-tauri/binaries/*.exe
+launcher/src-tauri/binaries/*.dll
+launcher/src-tauri/binaries/*.pdb
+

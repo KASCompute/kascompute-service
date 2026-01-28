@@ -13,10 +13,10 @@ use std::{
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager};
 use tokio::task::JoinHandle;
 
-// ✅ NEW: unified UI logs
+// ✅ unified UI logs
 use crate::logs;
 
-// ✅ NEW (Windows): prevent black console window for sidecars
+// ✅ Windows: prevent black console window for sidecars
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
@@ -34,7 +34,7 @@ pub struct ProcState {
   pub miner_loop_on: AtomicBool,
   pub miner_loop_handle: Mutex<Option<JoinHandle<()>>>,
 
-  // ✅ new: restart supervisor
+  // ✅ restart supervisor
   pub desired: Mutex<HashMap<String, bool>>,
   pub configs: Mutex<HashMap<String, ServiceConfig>>,
   pub supervisor_on: AtomicBool,
@@ -46,6 +46,72 @@ pub struct LogPayload {
   pub target: String,
   pub stream: String,
   pub line: String,
+}
+
+// ============================================================================
+// ✅ Miner proof UI event (parsed from sidecar stdout line: "MINER_PROOF ...")
+// Keeps frontend Proof Stats + Recent Proofs working.
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+struct MinerProofUi {
+  node_id: String,
+  job_id: u64,
+  work_units: u64,
+  elapsed_ms: u64,
+  workload_mode: String,
+  client_version: String,
+  ts: u64,
+  proof_hash_hex: String,
+  signature_hex: String,
+  public_key_hex: String,
+}
+
+fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
+  let line = line.trim();
+  if !line.starts_with("MINER_PROOF ") {
+    return None;
+  }
+
+  // tokens: key=value
+  let mut node_id: Option<String> = None;
+  let mut job_id: Option<u64> = None;
+  let mut work_units: Option<u64> = None;
+  let mut elapsed_ms: Option<u64> = None;
+  let mut ts: Option<u64> = None;
+  let mut hash: Option<String> = None;
+  let mut sig: Option<String> = None;
+  let mut pubkey: Option<String> = None;
+
+  for tok in line.split_whitespace().skip(1) {
+    // ✅ be tolerant: ignore junk tokens
+    let Some((k, v)) = tok.split_once('=') else { continue; };
+
+    match k {
+      "node_id" => node_id = Some(v.to_string()),
+      "job" => job_id = v.parse().ok(),
+      "wu" => work_units = v.parse().ok(),
+      "elapsed_ms" => elapsed_ms = v.parse().ok(),
+      "ts" => ts = v.parse().ok(),
+      "hash" => hash = Some(v.to_string()),
+      "sig" => sig = Some(v.to_string()),
+      "pubkey" => pubkey = Some(v.to_string()),
+      _ => {}
+    }
+  }
+
+  Some(MinerProofUi {
+    node_id: node_id?,
+    job_id: job_id?,
+    work_units: work_units?,
+    elapsed_ms: elapsed_ms?,
+    workload_mode: "sim".to_string(),
+    client_version: "protocol-v1".to_string(),
+    ts: ts?,
+    proof_hash_hex: hash?,
+    signature_hex: sig?,
+    public_key_hex: pubkey.unwrap_or_else(|| "—".into()),
+  })
 }
 
 pub fn is_running(state: &ProcState, name: &str) -> bool {
@@ -88,7 +154,7 @@ pub fn pid_of(state: &ProcState, name: &str) -> Option<u32> {
   }
 }
 
-// ✅ desired + config
+// desired + config
 pub async fn set_desired(state: &ProcState, name: &str, v: bool) {
   if let Ok(mut d) = state.desired.lock() {
     d.insert(name.to_string(), v);
@@ -117,11 +183,7 @@ fn get_desired(state: &ProcState, name: &str) -> bool {
 }
 
 fn get_config(state: &ProcState, name: &str) -> Option<ServiceConfig> {
-  state
-    .configs
-    .lock()
-    .ok()
-    .and_then(|c| c.get(name).cloned())
+  state.configs.lock().ok().and_then(|c| c.get(name).cloned())
 }
 
 fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
@@ -145,7 +207,7 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
     let mut last_restart: HashMap<String, Instant> = HashMap::new();
     let mut crash_window: HashMap<String, (Instant, u32)> = HashMap::new();
 
-    // ✅ capture unified log state once for the supervisor task
+    // capture unified log state once for the supervisor task
     let ui_logs = app2.state::<logs::LogState>().inner().clone();
 
     loop {
@@ -184,7 +246,12 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
           let crashed = !success;
           crate::runtime_state::mark_stopped(&app2, name, crashed);
 
-          let line = if crashed { "process exited (crash)" } else { "process exited" }.to_string();
+          let line = if crashed {
+            "process exited (crash)"
+          } else {
+            "process exited"
+          }
+          .to_string();
 
           let _ = app2.emit(
             "sidecar:event",
@@ -195,7 +262,6 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
             },
           );
 
-          // ✅ unified UI log line
           logs::push_ui(&app2, &ui_logs, name, "event", line);
         }
 
@@ -212,11 +278,7 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
           }
 
           // restart limit (8 per 60s)
-          let (win_start, count) = crash_window
-            .get(name)
-            .cloned()
-            .unwrap_or((now, 0));
-
+          let (win_start, count) = crash_window.get(name).cloned().unwrap_or((now, 0));
           let (start2, count2) = if now.duration_since(win_start) > Duration::from_secs(60) {
             (now, 0)
           } else {
@@ -261,7 +323,8 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
 
             logs::push_ui(&app2, &ui_logs, name, "event", line);
 
-            let _ = spawn_sidecar(app2.clone(), state2.as_ref(), name, &cfg.program, cfg.args).await;
+            // ✅ FIX: clone args so we don't move out of cfg
+            let _ = spawn_sidecar(app2.clone(), state2.as_ref(), name, &cfg.program, cfg.args.clone()).await;
           }
         }
       }
@@ -286,10 +349,10 @@ pub async fn spawn_sidecar(
     return Ok(());
   }
 
-  // ✅ unified log state for this function (clone for threads)
+  // unified log state for this function (clone for threads)
   let ui_logs = app.state::<logs::LogState>().inner().clone();
 
-  // ✅ Installer-safe: resolve from app resources
+  // Installer-safe: resolve from app resources
   let program_path = app
     .path()
     .resolve(program, BaseDirectory::Resource)
@@ -316,7 +379,7 @@ pub async fn spawn_sidecar(
 
   let mut cmd = StdCommand::new(program_path);
 
-  // ✅ Windows: do NOT spawn a black console window
+  // Windows: do NOT spawn a black console window
   #[cfg(windows)]
   cmd.creation_flags(CREATE_NO_WINDOW);
 
@@ -325,26 +388,21 @@ pub async fn spawn_sidecar(
   cmd.stdout(Stdio::piped());
   cmd.stderr(Stdio::piped());
 
-  // ✅ Sidecar API (PRO)
+  // Sidecar API (PRO)
   let api = std::env::var("KASCOMPUTE_API")
     .ok()
     .filter(|s| !s.trim().is_empty())
-    .or_else(|| {
-      std::env::var("VITE_SIDECAR_API")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-    })
-    .or_else(|| {
-      std::env::var("VITE_API_BASE")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-    })
+    .or_else(|| std::env::var("VITE_SIDECAR_API").ok().filter(|s| !s.trim().is_empty()))
+    .or_else(|| std::env::var("VITE_API_BASE").ok().filter(|s| !s.trim().is_empty()))
     .unwrap_or_else(|| "https://kascompute-protocol-v1.onrender.com".to_string());
 
   cmd.env("KASCOMPUTE_API", api.clone());
 
   // Optional: make sidecar logs readable
-  cmd.env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()));
+  cmd.env(
+    "RUST_LOG",
+    std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+  );
 
   {
     let line = format!("api for sidecar: {}", api);
@@ -361,9 +419,7 @@ pub async fn spawn_sidecar(
     logs::push_ui(&app, &ui_logs, name, "event", line);
   }
 
-  let mut child = cmd
-    .spawn()
-    .map_err(|e| format!("spawn failed: {e}"))?;
+  let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
 
   let stdout = child.stdout.take();
   let stderr = child.stderr.take();
@@ -373,7 +429,7 @@ pub async fn spawn_sidecar(
     map.insert(name.to_string(), child);
   }
 
-  // ✅ uptime start (persisted)
+  // uptime start (persisted)
   crate::runtime_state::mark_started(&app, name);
 
   {
@@ -399,6 +455,13 @@ pub async fn spawn_sidecar(
     std::thread::spawn(move || {
       let reader = BufReader::new(out);
       for line in reader.lines().flatten() {
+        // ✅ parse miner proof line and emit structured UI event
+        if target == "miner" {
+          if let Some(ui) = parse_miner_proof_line(&line) {
+            let _ = app_clone.emit("miner:proof", ui);
+          }
+        }
+
         let payload = LogPayload {
           target: target.clone(),
           stream: "stdout".into(),
@@ -434,7 +497,7 @@ pub async fn spawn_sidecar(
   Ok(())
 }
 
-// ✅ managed wrapper (stores config + enables auto-restart)
+// managed wrapper (stores config + enables auto-restart)
 pub async fn spawn_sidecar_managed(
   app: AppHandle,
   state_arc: std::sync::Arc<ProcState>,
