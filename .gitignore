@@ -77,3 +77,8 @@ launcher/sidecars/
 # Windows binaries
 *.exe
 
+
+# Visual Studio / IDE
+launcher/.vs/
+.vs/
+

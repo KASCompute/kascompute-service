@@ -117,14 +117,16 @@ export function useTauriLauncher() {
         uptime: m?.node?.uptime ?? p.uptime,
         ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
       }));
-    } else {
-      setNodeStatus((p) => ({
-        ...DEFAULT_NODE,
-        status: "stopped",
-        uptime: m?.node?.uptime ?? p.uptime,
-        ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
-      }));
-    }
+} else {
+  setNodeStatus(() => ({
+    ...DEFAULT_NODE,
+    status: "stopped",
+    pid: undefined,
+    uptime: undefined,
+    ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
+  }));
+}
+
 
     // MINER
     if (s?.miner?.running) {
@@ -139,7 +141,7 @@ export function useTauriLauncher() {
       setMinerStatus((p) => ({
         ...DEFAULT_MINER,
         status: "stopped",
-        uptime: m?.miner?.uptime ?? p.uptime,
+        uptime: undefined,
         ...(typeof m?.miner?.crashes === "number" ? ({ crashes: m.miner.crashes } as any) : {}),
       }));
     }

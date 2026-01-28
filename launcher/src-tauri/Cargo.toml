@@ -32,6 +32,8 @@ ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 hex = "0.4"
 sha2 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [[bin]]
 name = "kascompute-node"

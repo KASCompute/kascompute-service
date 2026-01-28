@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { FolderOpen, Globe, Check, AlertCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FolderOpen, Globe, Check, AlertCircle, RefreshCw, Download } from "lucide-react";
 import { GlassCard, GlassCardHeader, GlassCardTitle, GlassCardContent } from "@/components/common/GlassCard";
 import { ValidatedInput } from "@/components/common/ValidatedInput";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { isTauri } from "@/lib/tauri";
 import type { Config, RequiredScript } from "@/types";
+import { checkForUpdates } from "@/lib/updater"; // <- nutzt dein vorhandenes file
 
 interface SettingsPageProps {
   config: Config;
@@ -12,9 +15,19 @@ interface SettingsPageProps {
   onUpdateConfig: (updates: Partial<Config>) => void;
 }
 
+type UpdateState =
+  | { status: "idle"; msg?: string }
+  | { status: "checking"; msg?: string }
+  | { status: "available"; msg?: string; update: any }
+  | { status: "none"; msg?: string }
+  | { status: "error"; msg: string };
+
 export function SettingsPage({ config, requiredScripts, onUpdateConfig }: SettingsPageProps) {
   const [scriptsDir, setScriptsDir] = useState(config.scriptsDirectory);
   const [dashboardUrl, setDashboardUrl] = useState(config.dashboardUrl);
+
+  // Updates
+  const [u, setU] = useState<UpdateState>({ status: "idle" });
 
   // Simple validation
   const isValidPath = scriptsDir.length > 0 && (scriptsDir.includes("\\") || scriptsDir.includes("/"));
@@ -34,22 +47,57 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
     onUpdateConfig({ role: value as Config["role"] });
   };
 
+  const runUpdateCheck = async () => {
+    if (!isTauri()) {
+      setU({ status: "error", msg: "Updater works only inside the installed app (Tauri)." });
+      return;
+    }
+    setU({ status: "checking", msg: "Checking for updates…" });
+    try {
+      const update = await checkForUpdates(); // returns Update | null
+      if (update) {
+        const v = (update as any)?.version ? `v${(update as any).version}` : "Update available";
+        setU({ status: "available", msg: v, update });
+      } else {
+        setU({ status: "none", msg: "Up to date" });
+      }
+    } catch (e: any) {
+      setU({ status: "error", msg: e?.message ?? "Update check failed" });
+    }
+  };
+
+  const runInstall = async () => {
+    if (u.status !== "available") return;
+    try {
+      // Tauri updater Update object typically has download/install
+      await u.update.download();
+      await u.update.install();
+    } catch (e: any) {
+      setU({ status: "error", msg: e?.message ?? "Install failed" });
+    }
+  };
+
+  useEffect(() => {
+    // optional: auto-check on open (safe, and keeps button visible regardless)
+    runUpdateCheck();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const updateBusy = u.status === "checking";
+  const updateAvailable = u.status === "available";
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-foreground mb-1">Settings</h2>
-        <p className="text-muted-foreground text-sm">
-          Configure your KASCompute launcher
-        </p>
+        <p className="text-muted-foreground text-sm">Configure your KASCompute launcher</p>
       </div>
 
       {/* Configuration Section */}
       <GlassCard>
         <GlassCardHeader>
           <GlassCardTitle>Configuration</GlassCardTitle>
-          <span className="text-xs text-muted-foreground font-mono">
-            get_config / set_config
-          </span>
+          <span className="text-xs text-muted-foreground font-mono">get_config / set_config</span>
         </GlassCardHeader>
 
         <GlassCardContent className="space-y-6">
@@ -65,9 +113,7 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
                 onChange={(e) => handleScriptsDirChange(e.target.value)}
                 placeholder="C:\KASCompute\scripts"
                 validationState={scriptsDir ? (isValidPath ? "valid" : "warning") : "none"}
-                validationMessage={
-                  scriptsDir && !isValidPath ? "Enter a valid directory path" : undefined
-                }
+                validationMessage={scriptsDir && !isValidPath ? "Enter a valid directory path" : undefined}
                 hint="Path to the folder containing your KASCompute scripts"
               />
             </div>
@@ -85,9 +131,7 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
                 onChange={(e) => handleDashboardUrlChange(e.target.value)}
                 placeholder="https://dashboard.kascompute.io"
                 validationState={dashboardUrl ? (isValidUrl ? "valid" : "invalid") : "none"}
-                validationMessage={
-                  dashboardUrl && !isValidUrl ? "URL must start with http:// or https://" : undefined
-                }
+                validationMessage={dashboardUrl && !isValidUrl ? "URL must start with http:// or https://" : undefined}
                 hint="The KASCompute dashboard endpoint for reporting"
               />
             </div>
@@ -110,10 +154,55 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
                   <SelectItem value="both">Both (dev)</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Select which services to enable
-              </p>
+              <p className="text-xs text-muted-foreground">Select which services to enable</p>
             </div>
+          </div>
+        </GlassCardContent>
+      </GlassCard>
+
+      {/* Updates Section */}
+      <GlassCard>
+        <GlassCardHeader>
+          <GlassCardTitle>Updates</GlassCardTitle>
+        </GlassCardHeader>
+
+        <GlassCardContent className="flex items-center justify-between gap-4">
+          <div className="text-sm text-muted-foreground">
+            {!isTauri()
+              ? "Installierte App nötig (Updater nur in Tauri)."
+              : u.status === "available"
+              ? `Update verfügbar${u.msg ? ` • ${u.msg}` : ""}`
+              : u.status === "none"
+              ? "Up to date"
+              : u.status === "checking"
+              ? "Checking…"
+              : u.status === "error"
+              ? u.msg
+              : "—"}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={runUpdateCheck}
+              disabled={!isTauri() || updateBusy}
+              className="h-8"
+              title="Check for updates"
+            >
+              <RefreshCw className={`h-4 w-4 ${updateBusy ? "animate-spin" : ""}`} />
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={runInstall}
+              disabled={!isTauri() || !updateAvailable}
+              className="h-8"
+              title="Install update"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Update
+            </Button>
           </div>
         </GlassCardContent>
       </GlassCard>
@@ -144,16 +233,10 @@ function ScriptCheckItem({ script }: ScriptCheckItemProps) {
   return (
     <div
       className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
-        script.present
-          ? "border-success/30 bg-success/5"
-          : "border-warning/30 bg-warning/5"
+        script.present ? "border-success/30 bg-success/5" : "border-warning/30 bg-warning/5"
       }`}
     >
-      {script.present ? (
-        <Check className="h-4 w-4 text-success" />
-      ) : (
-        <AlertCircle className="h-4 w-4 text-warning" />
-      )}
+      {script.present ? <Check className="h-4 w-4 text-success" /> : <AlertCircle className="h-4 w-4 text-warning" />}
       <span className={`text-sm font-mono ${script.present ? "text-foreground" : "text-warning"}`}>
         {script.name}
       </span>

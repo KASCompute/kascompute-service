@@ -13,6 +13,15 @@ use std::{
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager};
 use tokio::task::JoinHandle;
 
+// ✅ NEW: unified UI logs
+use crate::logs;
+
+// ✅ NEW (Windows): prevent black console window for sidecars
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
   pub program: String,
@@ -136,6 +145,9 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
     let mut last_restart: HashMap<String, Instant> = HashMap::new();
     let mut crash_window: HashMap<String, (Instant, u32)> = HashMap::new();
 
+    // ✅ capture unified log state once for the supervisor task
+    let ui_logs = app2.state::<logs::LogState>().inner().clone();
+
     loop {
       if !state2.supervisor_on.load(Ordering::Relaxed) {
         break;
@@ -172,14 +184,19 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
           let crashed = !success;
           crate::runtime_state::mark_stopped(&app2, name, crashed);
 
+          let line = if crashed { "process exited (crash)" } else { "process exited" }.to_string();
+
           let _ = app2.emit(
             "sidecar:event",
             LogPayload {
               target: name.to_string(),
               stream: "event".into(),
-              line: if crashed { "process exited (crash)".into() } else { "process exited".into() },
+              line: line.clone(),
             },
           );
+
+          // ✅ unified UI log line
+          logs::push_ui(&app2, &ui_logs, name, "event", line);
         }
 
         if desired && !is_running(state2.as_ref(), name) {
@@ -211,14 +228,19 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
             if let Ok(mut d) = state2.desired.lock() {
               d.insert(name.to_string(), false);
             }
+
+            let line = "restart limit hit → stopping service".to_string();
+
             let _ = app2.emit(
               "sidecar:event",
               LogPayload {
                 target: name.to_string(),
                 stream: "event".into(),
-                line: "restart limit hit → stopping service".into(),
+                line: line.clone(),
               },
             );
+
+            logs::push_ui(&app2, &ui_logs, name, "event", line);
             continue;
           }
 
@@ -226,14 +248,18 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
             crash_window.insert(name.to_string(), (start2, count2 + 1));
             last_restart.insert(name.to_string(), now);
 
+            let line = "auto-restart...".to_string();
+
             let _ = app2.emit(
               "sidecar:event",
               LogPayload {
                 target: name.to_string(),
                 stream: "event".into(),
-                line: "auto-restart...".into(),
+                line: line.clone(),
               },
             );
+
+            logs::push_ui(&app2, &ui_logs, name, "event", line);
 
             let _ = spawn_sidecar(app2.clone(), state2.as_ref(), name, &cfg.program, cfg.args).await;
           }
@@ -260,6 +286,9 @@ pub async fn spawn_sidecar(
     return Ok(());
   }
 
+  // ✅ unified log state for this function (clone for threads)
+  let ui_logs = app.state::<logs::LogState>().inner().clone();
+
   // ✅ Installer-safe: resolve from app resources
   let program_path = app
     .path()
@@ -270,59 +299,67 @@ pub async fn spawn_sidecar(
     return Err(format!("sidecar not found at: {}", program_path.display()));
   }
 
-  let _ = app.emit(
-    "sidecar:event",
-    LogPayload {
-      target: name.to_string(),
-      stream: "event".into(),
-      line: format!("resolved path: {}", program_path.display()),
-    },
-  );
+  {
+    let line = format!("resolved path: {}", program_path.display());
 
-let mut cmd = StdCommand::new(program_path);
+    let _ = app.emit(
+      "sidecar:event",
+      LogPayload {
+        target: name.to_string(),
+        stream: "event".into(),
+        line: line.clone(),
+      },
+    );
 
-cmd.args(args.clone());
-cmd.stdin(Stdio::null());
-cmd.stdout(Stdio::piped());
-cmd.stderr(Stdio::piped());
+    logs::push_ui(&app, &ui_logs, name, "event", line);
+  }
 
-// ✅ Sidecar API (PRO)
-// Priority:
-// 1) KASCOMPUTE_API
-// 2) VITE_SIDECAR_API
-// 3) VITE_API_BASE
-// 4) hard default
-let api = std::env::var("KASCOMPUTE_API")
+  let mut cmd = StdCommand::new(program_path);
+
+  // ✅ Windows: do NOT spawn a black console window
+  #[cfg(windows)]
+  cmd.creation_flags(CREATE_NO_WINDOW);
+
+  cmd.args(args.clone());
+  cmd.stdin(Stdio::null());
+  cmd.stdout(Stdio::piped());
+  cmd.stderr(Stdio::piped());
+
+  // ✅ Sidecar API (PRO)
+  let api = std::env::var("KASCOMPUTE_API")
     .ok()
     .filter(|s| !s.trim().is_empty())
     .or_else(|| {
-        std::env::var("VITE_SIDECAR_API")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+      std::env::var("VITE_SIDECAR_API")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
     })
     .or_else(|| {
-        std::env::var("VITE_API_BASE")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+      std::env::var("VITE_API_BASE")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
     })
     .unwrap_or_else(|| "https://kascompute-protocol-v1.onrender.com".to_string());
 
-// pass to sidecars (base url!)
-cmd.env("KASCOMPUTE_API", api.clone());
-
+  cmd.env("KASCOMPUTE_API", api.clone());
 
   // Optional: make sidecar logs readable
   cmd.env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()));
 
-  // Log which API is used (shows in your UI log stream)
-  let _ = app.emit(
-    "sidecar:event",
-    LogPayload {
-      target: name.to_string(),
-      stream: "event".into(),
-      line: format!("api for sidecar: {}", api),
-    },
-  );
+  {
+    let line = format!("api for sidecar: {}", api);
+
+    let _ = app.emit(
+      "sidecar:event",
+      LogPayload {
+        target: name.to_string(),
+        stream: "event".into(),
+        line: line.clone(),
+      },
+    );
+
+    logs::push_ui(&app, &ui_logs, name, "event", line);
+  }
 
   let mut child = cmd
     .spawn()
@@ -339,31 +376,37 @@ cmd.env("KASCOMPUTE_API", api.clone());
   // ✅ uptime start (persisted)
   crate::runtime_state::mark_started(&app, name);
 
-  let _ = app.emit(
-    "sidecar:event",
-    LogPayload {
-      target: name.to_string(),
-      stream: "event".into(),
-      line: format!("spawned: {}", program),
-    },
-  );
+  {
+    let line = format!("spawned: {}", program);
 
+    let _ = app.emit(
+      "sidecar:event",
+      LogPayload {
+        target: name.to_string(),
+        stream: "event".into(),
+        line: line.clone(),
+      },
+    );
 
+    logs::push_ui(&app, &ui_logs, name, "event", line);
+  }
 
   if let Some(out) = stdout {
     let app_clone = app.clone();
     let target = name.to_string();
+    let ui_logs_thread = ui_logs.clone();
+
     std::thread::spawn(move || {
       let reader = BufReader::new(out);
       for line in reader.lines().flatten() {
-        let _ = app_clone.emit(
-          "sidecar:stdout",
-          LogPayload {
-            target: target.clone(),
-            stream: "stdout".into(),
-            line,
-          },
-        );
+        let payload = LogPayload {
+          target: target.clone(),
+          stream: "stdout".into(),
+          line: line.clone(),
+        };
+
+        let _ = app_clone.emit("sidecar:stdout", payload.clone());
+        logs::push_ui(&app_clone, &ui_logs_thread, &target, "stdout", payload.line);
       }
     });
   }
@@ -371,17 +414,19 @@ cmd.env("KASCOMPUTE_API", api.clone());
   if let Some(err) = stderr {
     let app_clone = app.clone();
     let target = name.to_string();
+    let ui_logs_thread = ui_logs.clone();
+
     std::thread::spawn(move || {
       let reader = BufReader::new(err);
       for line in reader.lines().flatten() {
-        let _ = app_clone.emit(
-          "sidecar:stderr",
-          LogPayload {
-            target: target.clone(),
-            stream: "stderr".into(),
-            line,
-          },
-        );
+        let payload = LogPayload {
+          target: target.clone(),
+          stream: "stderr".into(),
+          line: line.clone(),
+        };
+
+        let _ = app_clone.emit("sidecar:stderr", payload.clone());
+        logs::push_ui(&app_clone, &ui_logs_thread, &target, "stderr", payload.line);
       }
     });
   }
@@ -418,26 +463,35 @@ pub async fn kill_sidecar(app: AppHandle, state: &ProcState, name: &str) -> Resu
     let _ = child.kill();
     let _ = child.try_wait();
 
-    // ✅ uptime stop (manual stop = not crashed)
     crate::runtime_state::mark_stopped(&app, name, false);
+
+    let line = "killed".to_string();
 
     let _ = app.emit(
       "sidecar:event",
       LogPayload {
         target: name.to_string(),
         stream: "event".into(),
-        line: "killed".into(),
+        line: line.clone(),
       },
     );
+
+    let ui_logs = app.state::<logs::LogState>().inner().clone();
+    logs::push_ui(&app, &ui_logs, name, "event", line);
   } else {
+    let line = "not running".to_string();
+
     let _ = app.emit(
       "sidecar:event",
       LogPayload {
         target: name.to_string(),
         stream: "event".into(),
-        line: "not running".into(),
+        line: line.clone(),
       },
     );
+
+    let ui_logs = app.state::<logs::LogState>().inner().clone();
+    logs::push_ui(&app, &ui_logs, name, "event", line);
   }
 
   Ok(())

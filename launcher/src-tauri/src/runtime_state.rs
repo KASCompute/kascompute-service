@@ -90,17 +90,20 @@ pub fn get_totals_conditional(
   let st = load_state(app);
   let s = st.services.get(key).cloned().unwrap_or_default();
 
-  let mut total = s.total_ms;
-
-  // ✅ nur live hochrechnen, wenn Prozess wirklich läuft
-  if is_running {
+  // ✅ UI wants session uptime (since last start), not lifetime.
+  let session_ms: i64 = if is_running {
     if let Some(start) = s.running_since_ms {
-      total += now_ms().saturating_sub(start).max(0);
+      now_ms().saturating_sub(start).max(0)
+    } else {
+      0
     }
-  }
+  } else {
+    0
+  };
 
-  (total, s.crash_count)
+  (session_ms, s.crash_count)
 }
+
 
 
 
