@@ -5,13 +5,20 @@ interface GlassCardProps {
   children: ReactNode;
   className?: string;
   hover?: boolean;
+  density?: "normal" | "compact";
 }
 
-export function GlassCard({ children, className, hover = false }: GlassCardProps) {
+export function GlassCard({
+  children,
+  className,
+  hover = false,
+  density = "normal",
+}: GlassCardProps) {
   return (
     <div
       className={cn(
-        "glass-card rounded-2xl p-6 transition-all duration-300",
+        "glass-card rounded-2xl transition-all duration-300",
+        density === "normal" ? "p-6" : "p-4",
         hover && "glow-hover cursor-pointer",
         className
       )}
@@ -63,7 +70,12 @@ interface GlassCardFooterProps {
 
 export function GlassCardFooter({ children, className }: GlassCardFooterProps) {
   return (
-    <div className={cn("flex items-center gap-3 mt-4 pt-4 border-t border-border/50", className)}>
+    <div
+      className={cn(
+        "flex items-center gap-3 mt-4 pt-4 border-t border-border/50",
+        className
+      )}
+    >
       {children}
     </div>
   );

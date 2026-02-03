@@ -25,7 +25,7 @@ export interface MinerStatus {
 
 export interface LogEntry {
   id: string;
-  target: "node" | "miner";       
+  target: "node" | "miner";
   timestamp: string;
   message: string;
   level: "info" | "warn" | "error";
@@ -60,3 +60,58 @@ export type CommandName =
   | "stop_miner"
   | "tail_log"
   | "send_heartbeat";
+
+/* =========================
+   PROTOCOL API (v1.1)
+========================= */
+
+export type ApiEnvelope<T> = {
+  status: "ok" | "error";
+  data: T;
+  error?: any;
+  ts?: number;
+};
+
+export type NodeMiningStats = {
+  node_id: string;
+  total_mined_nano: number;
+  last_block_reward_nano: number;
+  hashrate_share_pct: number;
+  cumulative_work_units: number;
+};
+
+export type MiningStats = {
+  block_height: number;
+  current_block_reward_kct: number;
+  current_block_reward_nano: number;
+  month_index: number;
+  total_emitted_nano: number;
+  per_node: NodeMiningStats[];
+  timestamp: number;
+  reward_window_sec: number;
+};
+
+export type RewardView = {
+  // Backward compatible field name (server: node_id contains miner_id semantics)
+  node_id: string;
+  effective_work_units: number;
+  verified_work_units: number;
+  share: number; // 0..1
+};
+
+export type MinerBalanceView = {
+  miner_id: string;
+  total_mined_nano: number;
+  last_block_reward_nano: number;
+};
+
+export type RewardLedgerEntry = {
+  block_height: number;
+  timestamp_unix: number;
+  miner_id: string;
+  amount_nano: number;
+  share: number; // 0..1
+  compute_units: number;
+  proofs_count: number;
+  reason: string;
+};

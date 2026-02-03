@@ -10,6 +10,9 @@ use std::{
   time::{Duration, Instant},
 };
 
+// ✅ NEW: persist miner_id file
+use std::fs;
+
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager};
 use tokio::task::JoinHandle;
 
@@ -56,6 +59,7 @@ pub struct LogPayload {
 #[derive(Debug, Clone, Serialize)]
 struct MinerProofUi {
   node_id: String,
+  miner_id: String,
   job_id: u64,
   work_units: u64,
   elapsed_ms: u64,
@@ -75,6 +79,7 @@ fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
 
   // tokens: key=value
   let mut node_id: Option<String> = None;
+  let mut miner_id: Option<String> = None; 
   let mut job_id: Option<u64> = None;
   let mut work_units: Option<u64> = None;
   let mut elapsed_ms: Option<u64> = None;
@@ -89,6 +94,7 @@ fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
 
     match k {
       "node_id" => node_id = Some(v.to_string()),
+      "miner_id" => miner_id = Some(v.to_string()), 
       "job" => job_id = v.parse().ok(),
       "wu" => work_units = v.parse().ok(),
       "elapsed_ms" => elapsed_ms = v.parse().ok(),
@@ -100,18 +106,67 @@ fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
     }
   }
 
+  let node_id = node_id?;
+  // ✅ fallback: if miner didn't provide miner_id, treat miner==node (legacy safe)
+  let miner_id = miner_id.unwrap_or_else(|| node_id.clone());
+
   Some(MinerProofUi {
-    node_id: node_id?,
+    node_id,
+    miner_id,
     job_id: job_id?,
     work_units: work_units?,
     elapsed_ms: elapsed_ms?,
     workload_mode: "sim".to_string(),
-    client_version: "protocol-v1".to_string(),
+    client_version: format!("launcher-dev/{}", env!("CARGO_PKG_VERSION")),
     ts: ts?,
     proof_hash_hex: hash?,
     signature_hex: sig?,
     public_key_hex: pubkey.unwrap_or_else(|| "—".into()),
   })
+}
+
+// ============================================================================
+// ✅ Miner ID persistence (per installation)
+// ENV exported to miner sidecar: KASCOMPUTE_MINER_ID
+// ============================================================================
+
+fn load_or_create_miner_id(app: &AppHandle) -> String {
+  // store stable in AppLocalData (survives restarts)
+  let path = app
+    .path()
+    .resolve("miner_id.txt", BaseDirectory::AppLocalData)
+    .unwrap_or_else(|_| std::path::PathBuf::from("miner_id.txt"));
+
+  if let Ok(s) = fs::read_to_string(&path) {
+    let s = s.trim().to_string();
+    if !s.is_empty() {
+      return s;
+    }
+  }
+
+  let id = format!("kc_miner_{:016x}", rand_u64());
+
+  if let Some(parent) = path.parent() {
+    let _ = fs::create_dir_all(parent);
+  }
+  let _ = fs::write(&path, &id);
+
+  id
+}
+
+// small rng without extra crates
+fn rand_u64() -> u64 {
+  use std::time::{SystemTime, UNIX_EPOCH};
+  let now = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_nanos() as u64;
+
+  // xorshift-ish
+  let mut x = now ^ (now << 13);
+  x ^= x >> 7;
+  x ^= x << 17;
+  x
 }
 
 pub fn is_running(state: &ProcState, name: &str) -> bool {
@@ -397,6 +452,23 @@ pub async fn spawn_sidecar(
     .unwrap_or_else(|| "https://kascompute-protocol-v1.onrender.com".to_string());
 
   cmd.env("KASCOMPUTE_API", api.clone());
+
+  // ✅ NEW: Miner-ID nur für miner sidecar
+  if name == "miner" {
+    let miner_id = load_or_create_miner_id(&app);
+    cmd.env("KASCOMPUTE_MINER_ID", miner_id.clone());
+
+    let line = format!("miner_id for sidecar: {}", miner_id);
+    let _ = app.emit(
+      "sidecar:event",
+      LogPayload {
+        target: name.to_string(),
+        stream: "event".into(),
+        line: line.clone(),
+      },
+    );
+    logs::push_ui(&app, &ui_logs, name, "event", line);
+  }
 
   // Optional: make sidecar logs readable
   cmd.env(

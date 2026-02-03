@@ -1,5 +1,5 @@
-import React from "react";
-import { Cpu, Clock, Play, Square, Hash, PenLine, Activity } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Cpu, Clock, Play, Square, Hash, PenLine, Activity, Coins, List } from "lucide-react";
 import {
   GlassCard,
   GlassCardHeader,
@@ -9,7 +9,9 @@ import {
 import { StatusOrb } from "@/components/common/StatusOrb";
 import { LogPanel } from "@/components/common/LogPanel";
 import { Button } from "@/components/ui/button";
-import type { MinerStatus, LogEntry } from "@/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { MinerStatus, LogEntry, MinerBalanceView, RewardLedgerEntry } from "@/types";
+import { getRewardsBalances, getRewardsLedger } from "@/services/backend";
 
 type MinerProofUi = {
   node_id: string;
@@ -38,7 +40,6 @@ interface MinerPageProps {
   onStart: () => void;
   onStop: () => void;
 
-  // ✅ optional (wenn du sie später im Hook lieferst)
   proofs?: MinerProofUi[];
   stats?: MinerStats;
 }
@@ -53,6 +54,17 @@ function fmtTs(ts?: number | null) {
   if (!ts) return "—";
   const d = new Date(ts * 1000);
   return d.toLocaleTimeString();
+}
+
+function fmtKctFromNano(nano?: number | null) {
+  if (nano == null) return "—";
+  const kct = nano / 1e8;
+  return kct.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function fmtPct(x?: number | null) {
+  if (x == null) return "—";
+  return `${(x * 100).toFixed(2)}%`;
 }
 
 export function MinerPage({
@@ -76,15 +88,86 @@ export function MinerPage({
 
   const last = proofs.length ? proofs[proofs.length - 1] : null;
 
+  // ===== Rewards UI state =====
+  const [balances, setBalances] = useState<MinerBalanceView[]>([]);
+  const [selectedMiner, setSelectedMiner] = useState<string>("");
+  const [ledger, setLedger] = useState<RewardLedgerEntry[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  // load balances periodically
+  useEffect(() => {
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const b = await getRewardsBalances();
+        if (!alive) return;
+
+        setBalances(b ?? []);
+        setErr(null);
+
+        // ✅ FIX: default miner only if none selected (no stale closure issue)
+        const first = b?.[0]?.miner_id ?? "";
+        if (first) {
+          setSelectedMiner((prev) => prev || first);
+        }
+      } catch (e: any) {
+        if (!alive) return;
+        setErr(e?.message ?? "Failed to load balances");
+      }
+    };
+
+    tick();
+    const t = setInterval(tick, 6000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  // load ledger when miner changes
+  useEffect(() => {
+    let alive = true;
+    if (!selectedMiner) return;
+
+    const tick = async () => {
+      try {
+        const l = await getRewardsLedger(selectedMiner);
+        if (!alive) return;
+        setLedger(l ?? []);
+        setErr(null);
+      } catch (e: any) {
+        if (!alive) return;
+        setErr(e?.message ?? "Failed to load ledger");
+      }
+    };
+
+    tick();
+    const t = setInterval(tick, 6000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [selectedMiner]);
+
+  const selectedBalance = useMemo(
+    () => balances.find((x) => x.miner_id === selectedMiner) ?? null,
+    [balances, selectedMiner]
+  );
+
+  const ledgerLatestFirst = useMemo(() => {
+    const copy = [...(ledger ?? [])];
+    copy.sort((a, b) => (b.block_height ?? 0) - (a.block_height ?? 0));
+    return copy.slice(0, 200);
+  }, [ledger]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-foreground mb-1">Miner</h2>
-          <p className="text-muted-foreground text-sm">
-            Mining client connected to remote nodes
-          </p>
+          <p className="text-muted-foreground text-sm">Mining client connected to remote nodes</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -114,7 +197,7 @@ export function MinerPage({
       </div>
 
       {/* Status */}
-      <GlassCard>
+      <GlassCard density="compact">
         <GlassCardHeader>
           <div className="flex items-center gap-3">
             <Cpu className="h-5 w-5 text-primary" />
@@ -137,16 +220,106 @@ export function MinerPage({
         </GlassCardContent>
       </GlassCard>
 
+      {/* Rewards (v1.1) */}
+      <GlassCard density="compact">
+        <GlassCardHeader>
+          <div className="flex items-center gap-3">
+            <Coins className="h-5 w-5 text-primary" />
+            <div>
+              <GlassCardTitle>Rewards</GlassCardTitle>
+              <p className="text-xs text-muted-foreground">Miner 80% • Node 20%</p>
+            </div>
+          </div>
+
+          <div className="w-[260px]">
+            <Select value={selectedMiner} onValueChange={setSelectedMiner}>
+              <SelectTrigger className="bg-input border-border/50 focus:border-primary">
+                <SelectValue placeholder="Select miner…" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border-border">
+                {balances.map((b) => (
+                  <SelectItem key={b.miner_id} value={b.miner_id}>
+                    {b.miner_id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </GlassCardHeader>
+
+        <GlassCardContent className="space-y-4">
+          {err ? <div className="text-sm text-destructive">{err}</div> : null}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <StatusItem
+              icon={Coins}
+              label="Total mined"
+              value={`${fmtKctFromNano(selectedBalance?.total_mined_nano ?? null)} KCT`}
+              highlight={Boolean(selectedBalance?.total_mined_nano)}
+            />
+            <StatusItem
+              icon={Coins}
+              label="Last block reward"
+              value={`${fmtKctFromNano(selectedBalance?.last_block_reward_nano ?? null)} KCT`}
+              highlight={Boolean(selectedBalance?.last_block_reward_nano)}
+            />
+            <StatusItem icon={List} label="Ledger entries" value={String(ledger?.length ?? 0)} />
+          </div>
+
+          {/* Ledger table */}
+          <div className="rounded-xl border border-border/40 bg-card/30 overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/40 text-sm font-medium text-foreground flex items-center gap-2">
+              <List className="h-4 w-4 text-primary" />
+              Ledger
+              <span className="text-xs text-muted-foreground font-mono ml-auto">
+                {selectedMiner ? `miner=${selectedMiner}` : "—"}
+              </span>
+            </div>
+
+            {ledgerLatestFirst.length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground">No ledger entries yet.</div>
+            ) : (
+              <div className="max-h-[360px] overflow-y-auto overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-background/60 backdrop-blur text-muted-foreground">
+                    <tr className="border-b border-border/50">
+                      <th className="text-left py-2 pl-4 pr-3 font-medium">Block</th>
+                      <th className="text-left py-2 pr-3 font-medium">Amount</th>
+                      <th className="text-left py-2 pr-3 font-medium">Share</th>
+                      <th className="text-left py-2 pr-3 font-medium">CU</th>
+                      <th className="text-left py-2 pr-4 font-medium">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledgerLatestFirst.map((x) => (
+                      <tr key={`${x.block_height}-${x.timestamp_unix}`} className="border-b border-border/30">
+                        <td className="py-2 pl-4 pr-3 font-mono whitespace-nowrap">{x.block_height}</td>
+                        <td className="py-2 pr-3 font-mono whitespace-nowrap">
+                          {fmtKctFromNano(x.amount_nano)} KCT
+                        </td>
+                        <td className="py-2 pr-3 font-mono whitespace-nowrap">{fmtPct(x.share)}</td>
+                        <td className="py-2 pr-3 font-mono whitespace-nowrap">
+                          {x.compute_units.toLocaleString()}
+                        </td>
+                        <td className="py-2 pr-4 font-mono whitespace-nowrap">{x.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </GlassCardContent>
+      </GlassCard>
+
       {/* Proof Stats */}
-      <GlassCard>
+      <GlassCard density="compact">
         <GlassCardHeader>
           <div className="flex items-center gap-3">
             <Activity className="h-5 w-5 text-primary" />
             <GlassCardTitle>Proof Stats</GlassCardTitle>
           </div>
-          <span className="text-xs text-muted-foreground font-mono">
-            last={fmtTs(s.lastProofTs)}
-          </span>
+          <span className="text-xs text-muted-foreground font-mono">last={fmtTs(s.lastProofTs)}</span>
         </GlassCardHeader>
 
         <GlassCardContent>
@@ -171,23 +344,19 @@ export function MinerPage({
         </GlassCardContent>
       </GlassCard>
 
-      {/* Recent Proofs (✅ scrollbar nur hier) */}
-      <GlassCard>
+      {/* Recent Proofs */}
+      <GlassCard density="compact">
         <GlassCardHeader>
           <GlassCardTitle>Recent Proofs</GlassCardTitle>
           <span className="text-xs text-muted-foreground font-mono">miner:proof</span>
         </GlassCardHeader>
 
-        {/* ✅ p-0 damit der Scroll-Container sauber sitzt */}
         <GlassCardContent className="p-0">
           {proofs.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">
-              No proofs yet. Start miner and wait for jobs.
-            </div>
+            <div className="p-6 text-sm text-muted-foreground">No proofs yet. Start miner and wait for jobs.</div>
           ) : (
             <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
               <table className="w-full text-sm">
-                {/* ✅ optional sticky header (sieht premium aus) */}
                 <thead className="sticky top-0 z-10 bg-background/60 backdrop-blur text-muted-foreground">
                   <tr className="border-b border-border/50">
                     <th className="text-left py-2 pl-6 pr-3 font-medium">Time</th>
@@ -195,19 +364,17 @@ export function MinerPage({
                     <th className="text-left py-2 pr-3 font-medium">WU</th>
                     <th className="text-left py-2 pr-3 font-medium">Elapsed</th>
                     <th className="text-left py-2 pr-3 font-medium">Hash</th>
-                    <th className="text-left py-6 pr-3 font-medium">Signature</th>
+                    <th className="text-left py-2 pr-6 font-medium">Signature</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {proofs
-                    .slice(-200) // mehr Buffer intern
-                    .reverse()  // neueste oben
+                    .slice(-200)
+                    .reverse()
                     .map((p) => (
                       <tr key={`${p.job_id}-${p.ts}`} className="border-b border-border/30">
-                        <td className="py-2 pl-6 pr-3 font-mono text-xs whitespace-nowrap">
-                          {fmtTs(p.ts)}
-                        </td>
+                        <td className="py-2 pl-6 pr-3 font-mono text-xs whitespace-nowrap">{fmtTs(p.ts)}</td>
                         <td className="py-2 pr-3 font-mono whitespace-nowrap">{p.job_id}</td>
                         <td className="py-2 pr-3 font-mono whitespace-nowrap">{p.work_units}</td>
                         <td className="py-2 pr-3 font-mono whitespace-nowrap">{p.elapsed_ms}ms</td>
@@ -227,13 +394,13 @@ export function MinerPage({
       </GlassCard>
 
       {/* Logs */}
-      <GlassCard>
+      <GlassCard density="compact">
         <GlassCardHeader>
           <GlassCardTitle>Live Logs</GlassCardTitle>
           <span className="text-xs text-muted-foreground font-mono">tail_log</span>
         </GlassCardHeader>
 
-        <GlassCardContent>
+        <GlassCardContent className="space-y-0">
           <LogPanel logs={logs} title="Live Logs (Miner)" maxHeight="420px" />
         </GlassCardContent>
       </GlassCard>
@@ -255,9 +422,7 @@ function StatusItem({ icon: Icon, label, value, highlight }: StatusItemProps) {
         <Icon className="h-3.5 w-3.5" />
         <span className="text-xs">{label}</span>
       </div>
-      <p className={`font-mono text-sm ${highlight ? "text-primary" : "text-foreground"}`}>
-        {value}
-      </p>
+      <p className={`font-mono text-sm ${highlight ? "text-primary" : "text-foreground"}`}>{value}</p>
     </div>
   );
 }

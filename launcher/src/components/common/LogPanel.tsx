@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogEntry } from "@/types";
 import { Button } from "@/components/ui/button";
-import { Copy, Pause, Play, Trash2 } from "lucide-react";
+import { Copy, Pause, Play, Trash2, ArrowDown } from "lucide-react";
 
 interface LogPanelProps {
   logs: LogEntry[];
@@ -15,37 +15,53 @@ interface LogPanelProps {
 export function LogPanel({
   logs,
   className,
-  maxHeight = "400px",
+  maxHeight = "420px",
   title = "Live Logs",
-  copyLines = 200,
+  copyLines = 250,
 }: LogPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [paused, setPaused] = useState(false);
 
-  // ✅ Merkt sich die letzte Log-ID zum Zeitpunkt von "Clear"
+  // remembers last visible log id at "clear"
   const [clearAfterId, setClearAfterId] = useState<string | null>(null);
+
+  // smart autoscroll: only scroll if user is at bottom
+  const [autoScroll, setAutoScroll] = useState(true);
 
   const finalLogs = useMemo(() => {
     const arr = logs ?? [];
     if (!clearAfterId) return arr;
 
-    // finde Index der Log mit clearAfterId und zeige alles danach
     const idx = arr.findIndex((l) => l.id === clearAfterId);
-    if (idx === -1) {
-      // falls die alte ID nicht mehr existiert (z.B. logs wurden ersetzt),
-      // dann zeigen wir einfach alles (weil es dann "neue" Logs sind)
-      return arr;
-    }
+    if (idx === -1) return arr;
     return arr.slice(idx + 1);
   }, [logs, clearAfterId]);
 
+  // track whether user is at bottom (so we don't yank scroll when user is reading)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      const threshold = 24;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
+      setAutoScroll(atBottom);
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll as any);
+  }, []);
+
+  // autoscroll only if not paused AND user is at bottom
   useEffect(() => {
     if (paused) return;
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [finalLogs, paused]);
+    if (!autoScroll) return;
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [finalLogs, paused, autoScroll]);
 
   const handleClear = () => {
     const arr = logs ?? [];
@@ -71,12 +87,33 @@ export function LogPanel({
     }
   };
 
+  const scrollToBottom = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setAutoScroll(true);
+  };
+
   return (
     <div className={cn("space-y-3", className)}>
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-foreground">{title}</div>
 
         <div className="flex items-center gap-2">
+          {!autoScroll && !paused && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={scrollToBottom}
+              className="h-8"
+              title="Scroll to bottom"
+            >
+              <ArrowDown className="h-4 w-4 mr-2" />
+              Bottom
+            </Button>
+          )}
+
           <Button
             type="button"
             variant="outline"
@@ -123,7 +160,11 @@ export function LogPanel({
 
       <div
         ref={containerRef}
-        className="space-y-2 overflow-y-auto rounded-xl bg-secondary/30 p-4 border border-border/50"
+        className={cn(
+          "overflow-y-auto rounded-xl border border-border/50",
+          "bg-black/20 backdrop-blur-sm",
+          "px-4 py-3"
+        )}
         style={{ maxHeight }}
       >
         {finalLogs.length === 0 ? (
@@ -131,41 +172,41 @@ export function LogPanel({
             {clearAfterId ? "Cleared. Waiting for new logs…" : "No logs available"}
           </div>
         ) : (
-          finalLogs.map((log) => <LogEntryCard key={log.id} log={log} />)
+          <div className="font-mono text-xs leading-5">
+            {finalLogs.map((log) => (
+              <LogLine key={log.id} log={log} />
+            ))}
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-interface LogEntryCardProps {
-  log: LogEntry;
-}
+function LogLine({ log }: { log: LogEntry }) {
+  const levelDot =
+    log.level === "error"
+      ? "bg-destructive"
+      : log.level === "warn"
+      ? "bg-yellow-400"
+      : "bg-primary";
 
-function LogEntryCard({ log }: LogEntryCardProps) {
+  const levelText =
+    log.level === "error"
+      ? "text-destructive"
+      : log.level === "warn"
+      ? "text-yellow-300"
+      : "text-foreground";
+
   return (
-    <div
-      className={cn(
-        "log-entry",
-        log.level === "info" && "log-entry-info",
-        log.level === "warn" && "log-entry-warn",
-        log.level === "error" && "log-entry-error"
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <span className="text-muted-foreground text-xs shrink-0 font-mono">
-          {log.timestamp}
-        </span>
-        <span
-          className={cn(
-            "flex-1",
-            log.level === "warn" && "text-warning",
-            log.level === "error" && "text-destructive"
-          )}
-        >
-          {log.message}
-        </span>
-      </div>
+    <div className="flex items-start gap-3 py-1">
+      <span className="text-muted-foreground shrink-0 w-[92px]">{log.timestamp}</span>
+
+      <span className="shrink-0 mt-[6px]">
+        <span className={cn("inline-block h-2 w-2 rounded-full", levelDot)} />
+      </span>
+
+      <span className={cn("flex-1 break-words", levelText)}>{log.message}</span>
     </div>
   );
 }
