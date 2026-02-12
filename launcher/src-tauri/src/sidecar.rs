@@ -549,73 +549,100 @@ pub async fn spawn_sidecar(
 
   cmd.env("KASCOMPUTE_API", api.clone());
 
-  let mut args2 = args.clone();
-  if name == "node" {
-    args2 = strip_arg_pair(args2, "--node-id");
-  }
+// ------------------------------------------------------------
+// Force consistent version for node + miner sidecars
+// ------------------------------------------------------------
+let app_version = env!("CARGO_PKG_VERSION").to_string();
 
-  cmd.args(args2);
-  cmd.stdin(Stdio::null());
-  cmd.stdout(Stdio::piped());
-  cmd.stderr(Stdio::piped());
+let mut args2 = args.clone();
 
-  cmd.env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()));
+// ensure we never pass duplicate/old versions
+args2 = strip_arg_pair(args2, "--version");
 
-  if name == "node" {
-    let node_id = load_or_create_node_id(&app);
+// node gets node_id injected below, so remove any user-provided --node-id
+if name == "node" {
+  args2 = strip_arg_pair(args2, "--node-id");
+}
 
-    cmd.env("KASCOMPUTE_NODE_ID", node_id.clone());
-    cmd.arg("--node-id").arg(node_id.clone());
+// force consistent version for node + miner
+args2.push("--version".into());
+args2.push(app_version.clone());
 
-    let line = format!("node_id for sidecar: {}", node_id);
-    let _ = app.emit(
-      "sidecar:event",
-      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
-    );
-    logs::push_ui(&app, &ui_logs, name, "event", line);
-  }
+cmd.args(args2);
 
-  if name == "miner" {
-    let miner_id = load_or_create_miner_id(&app);
-    cmd.env("KASCOMPUTE_MINER_ID", miner_id.clone());
+cmd.stdin(Stdio::null());
+cmd.stdout(Stdio::piped());
+cmd.stderr(Stdio::piped());
 
-    let line = format!("miner_id for sidecar: {}", miner_id);
-    let _ = app.emit(
-      "sidecar:event",
-      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
-    );
-    logs::push_ui(&app, &ui_logs, name, "event", line);
-  }
+cmd.env(
+  "RUST_LOG",
+  std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+);
 
-  {
-    let line = format!("api for sidecar: {}", api);
-    let _ = app.emit(
-      "sidecar:event",
-      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
-    );
-    logs::push_ui(&app, &ui_logs, name, "event", line);
-  }
+// ------------------------------------------------------------
+// Inject IDs / ENV
+// ------------------------------------------------------------
+if name == "node" {
+  let node_id = load_or_create_node_id(&app);
 
-  let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+  cmd.env("KASCOMPUTE_NODE_ID", node_id.clone());
+  cmd.arg("--node-id").arg(node_id.clone());
 
-  let stdout = child.stdout.take();
-  let stderr = child.stderr.take();
+  let line = format!("node_id for sidecar: {}", node_id);
+  let _ = app.emit(
+    "sidecar:event",
+    LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
+  );
+  logs::push_ui(&app, &ui_logs, name, "event", line);
+}
 
-  {
-    let mut map = state.procs.lock().map_err(|_| "lock failed".to_string())?;
-    map.insert(name.to_string(), child);
-  }
+if name == "miner" {
+  let miner_id = load_or_create_miner_id(&app);
+  cmd.env("KASCOMPUTE_MINER_ID", miner_id.clone());
 
-  crate::runtime_state::mark_started(&app, name);
+  let line = format!("miner_id for sidecar: {}", miner_id);
+  let _ = app.emit(
+    "sidecar:event",
+    LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
+  );
+  logs::push_ui(&app, &ui_logs, name, "event", line);
+}
 
-  {
-    let line = format!("spawned: {}", program);
-    let _ = app.emit(
-      "sidecar:event",
-      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
-    );
-    logs::push_ui(&app, &ui_logs, name, "event", line);
-  }
+// ------------------------------------------------------------
+// Debug: show version + api used by sidecars
+// ------------------------------------------------------------
+{
+  let line = format!("version for sidecar: {}", app_version);
+  let _ = app.emit(
+    "sidecar:event",
+    LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
+  );
+  logs::push_ui(&app, &ui_logs, name, "event", line);
+}
+
+{
+  let line = format!("api for sidecar: {}", api);
+  let _ = app.emit(
+    "sidecar:event",
+    LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
+  );
+  logs::push_ui(&app, &ui_logs, name, "event", line);
+}
+
+// ------------------------------------------------------------
+// Spawn
+// ------------------------------------------------------------
+let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+
+// IMPORTANT: keep these, otherwise stdout/stderr vars don't exist below
+let stdout = child.stdout.take();
+let stderr = child.stderr.take();
+
+{
+  let mut map = state.procs.lock().map_err(|_| "lock failed".to_string())?;
+  map.insert(name.to_string(), child);
+}
+
 
   if let Some(out) = stdout {
     let app_clone = app.clone();
