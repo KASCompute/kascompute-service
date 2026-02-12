@@ -15,8 +15,8 @@
     "windows": [
       {
         "title": "KASCompute Launcher",
-        "width": 800,
-        "height": 600,
+        "width": 1300,
+        "height": 800,
         "resizable": true,
         "fullscreen": false
       }

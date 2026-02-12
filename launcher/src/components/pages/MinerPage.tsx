@@ -9,7 +9,6 @@ import {
 import { StatusOrb } from "@/components/common/StatusOrb";
 import { LogPanel } from "@/components/common/LogPanel";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { MinerStatus, LogEntry, MinerBalanceView, RewardLedgerEntry } from "@/types";
 import { getRewardsBalances, getRewardsLedger } from "@/services/backend";
 
@@ -42,6 +41,9 @@ interface MinerPageProps {
 
   proofs?: MinerProofUi[];
   stats?: MinerStats;
+
+  // ✅ NEW: show only local miner id
+  minerId?: string | null;
 }
 
 function shortHex(s?: string, head = 10, tail = 8) {
@@ -74,6 +76,7 @@ export function MinerPage({
   onStop,
   proofs = [],
   stats,
+  minerId = null,
 }: MinerPageProps) {
   const isRunning = status.status === "running";
   const isTransitioning = status.status === "starting" || status.status === "stopping";
@@ -103,14 +106,16 @@ export function MinerPage({
         const b = await getRewardsBalances();
         if (!alive) return;
 
-        setBalances(b ?? []);
+        const list = b ?? [];
+        setBalances(list);
         setErr(null);
 
-        // ✅ FIX: default miner only if none selected (no stale closure issue)
-        const first = b?.[0]?.miner_id ?? "";
-        if (first) {
-          setSelectedMiner((prev) => prev || first);
-        }
+        // ✅ prefer local minerId, else keep current, else first item
+        const first = list?.[0]?.miner_id ?? "";
+        setSelectedMiner((prev) => {
+          if (minerId) return minerId;
+          return prev || first;
+        });
       } catch (e: any) {
         if (!alive) return;
         setErr(e?.message ?? "Failed to load balances");
@@ -123,7 +128,7 @@ export function MinerPage({
       alive = false;
       clearInterval(t);
     };
-  }, []);
+  }, [minerId]);
 
   // load ledger when miner changes
   useEffect(() => {
@@ -167,7 +172,7 @@ export function MinerPage({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-foreground mb-1">Miner</h2>
-          <p className="text-muted-foreground text-sm">Mining client connected to remote nodes</p>
+          <p className="text-muted-foreground text-sm">Worker that executes jobs and submits proofs</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -207,7 +212,7 @@ export function MinerPage({
         </GlassCardHeader>
 
         <GlassCardContent>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <StatusItem icon={Cpu} label="PID" value={status.pid?.toString() ?? "—"} />
             <StatusItem icon={Clock} label="Uptime" value={status.uptime ?? "—"} />
             <StatusItem
@@ -215,6 +220,12 @@ export function MinerPage({
               label="Status"
               value={status.status.charAt(0).toUpperCase() + status.status.slice(1)}
               highlight={isRunning}
+            />
+            <StatusItem
+              icon={Hash}
+              label="Miner ID"
+              value={minerId ?? "—"}
+              highlight={Boolean(minerId)}
             />
           </div>
         </GlassCardContent>
@@ -226,25 +237,14 @@ export function MinerPage({
           <div className="flex items-center gap-3">
             <Coins className="h-5 w-5 text-primary" />
             <div>
-              <GlassCardTitle>Rewards</GlassCardTitle>
+              <GlassCardTitle>Miner Rewards</GlassCardTitle>
               <p className="text-xs text-muted-foreground">Miner 80% • Node 20%</p>
             </div>
           </div>
 
-          <div className="w-[260px]">
-            <Select value={selectedMiner} onValueChange={setSelectedMiner}>
-              <SelectTrigger className="bg-input border-border/50 focus:border-primary">
-                <SelectValue placeholder="Select miner…" />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-border">
-                {balances.map((b) => (
-                  <SelectItem key={b.miner_id} value={b.miner_id}>
-                    {b.miner_id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <span className="text-xs text-muted-foreground font-mono">
+            miner={selectedMiner || "—"}
+          </span>
         </GlassCardHeader>
 
         <GlassCardContent className="space-y-4">

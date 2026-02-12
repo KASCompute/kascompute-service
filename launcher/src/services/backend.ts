@@ -5,6 +5,8 @@ import type {
   RewardView,
   MinerBalanceView,
   RewardLedgerEntry,
+  NodeBalanceView,
+  NodeRewardLedgerEntry,
 } from "@/types";
 
 export type BackendStatus = {
@@ -92,6 +94,8 @@ export async function getRewardsLeaderboard(): Promise<RewardView[]> {
   return assertOk(env, "GET /v1/rewards/leaderboard");
 }
 
+// ---- Miner (Worker) rewards ----
+
 export async function getRewardsBalances(): Promise<MinerBalanceView[]> {
   const env = await fetchEnvelope<MinerBalanceView[]>("/rewards/balances");
   return assertOk(env, "GET /v1/rewards/balances");
@@ -101,4 +105,17 @@ export async function getRewardsLedger(minerId: string): Promise<RewardLedgerEnt
   const safe = encodeURIComponent(minerId);
   const env = await fetchEnvelope<RewardLedgerEntry[]>(`/rewards/ledger/${safe}`);
   return assertOk(env, "GET /v1/rewards/ledger/:miner_id");
+}
+
+// ---- Node (Operator / Coordinator) rewards ----
+
+export async function getNodeRewardsBalances(): Promise<NodeBalanceView[]> {
+  const env = await fetchEnvelope<NodeBalanceView[]>("/rewards/nodes/balances");
+  return assertOk(env, "GET /v1/rewards/nodes/balances");
+}
+
+export async function getNodeRewardsLedger(nodeId: string): Promise<NodeRewardLedgerEntry[]> {
+  const safe = encodeURIComponent(nodeId);
+  const env = await fetchEnvelope<NodeRewardLedgerEntry[]>(`/rewards/nodes/ledger/${safe}`);
+  return assertOk(env, "GET /v1/rewards/nodes/ledger/:node_id");
 }

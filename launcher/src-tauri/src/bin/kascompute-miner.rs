@@ -44,9 +44,11 @@ Usage:
   kascompute-miner.exe --endpoint <URL> --node-id <COORDINATOR_ID> --pubkey <HEX> --privkey <HEX>
     [--version <X.Y.Z>] [--compute-profile <sim|cpu|gpu|...>]
 
-Miner identity:
-  - ENV KASCOMPUTE_MINER_ID overrides worker identity
-  - otherwise miner_id defaults to --node-id (coordinator)
+Identity:
+  - coordinator_id (job owner) comes from --node-id (lease owner)
+  - miner_id (worker) is:
+      1) ENV KASCOMPUTE_MINER_ID (if set)
+      2) otherwise derived deterministically from pubkey: kc_miner_<16hex>
 "#
   );
 }
@@ -60,12 +62,28 @@ fn normalize_endpoint(mut s: String) -> String {
   s
 }
 
-fn miner_id_from_env_or(coordinator_id: &str) -> String {
-  std::env::var("KASCOMPUTE_MINER_ID")
+fn env_nonempty(key: &str) -> Option<String> {
+  std::env::var(key)
     .ok()
     .map(|s| s.trim().to_string())
     .filter(|s| !s.is_empty())
-    .unwrap_or_else(|| coordinator_id.to_string())
+}
+
+fn derive_id_from_pubkey(prefix: &str, salt: &str, pubkey_hex: &str) -> String {
+  let pk_bytes = hex::decode(pubkey_hex).unwrap_or_default();
+  let mut hasher = Sha256::new();
+  hasher.update(b"kascompute:");
+  hasher.update(salt.as_bytes());
+  hasher.update(b":");
+  hasher.update(&pk_bytes);
+  let digest = hasher.finalize();
+  let short = hex::encode(&digest[..8]);
+  format!("{}{}", prefix, short)
+}
+
+fn miner_id_from_env_or_pubkey(public_key_hex: &str) -> String {
+  env_nonempty("KASCOMPUTE_MINER_ID")
+    .unwrap_or_else(|| derive_id_from_pubkey("kc_miner_", "miner", public_key_hex))
 }
 
 fn jitter_ms(max_ms: u64) -> u64 {
@@ -100,16 +118,10 @@ const NEXT_IDLE_SLEEP_MS: u64 = 1_200;
 
 const HEARTBEAT_EVERY_SECS: u64 = 25;
 
-// =======================================================
-// IMPORTANT: Must match server ProofPayloadV1 serialization
-// - field order matters for serde_json::to_vec()
-// - server expects:
-//   node_id (coordinator) THEN miner_id THEN job_id ...
-// =======================================================
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ProofPayloadV1ToSign {
-  node_id: String,                  // coordinator_id (job owner)
-  miner_id: Option<String>,         // Some(miner_id) for v1.1+
+  node_id: String,
+  miner_id: Option<String>,
   job_id: u64,
   work_units: u64,
   workload_mode: String,
@@ -139,15 +151,15 @@ struct HeartbeatPayload {
 async fn send_heartbeat(
   client: &reqwest::Client,
   hb_url: &str,
-  version: &str,
-  node_id: &str,
+  ua_version: &str,
+  actor_id: &str,
   roles: Vec<String>,
   public_key_hex: &str,
   compute_profile: Option<String>,
   uptime_sec: u64,
 ) {
   let payload = HeartbeatPayload {
-    node_id: node_id.to_string(),
+    node_id: actor_id.to_string(),
     public_key_hex: public_key_hex.to_string(),
     roles,
     client_version: Some(format!("miner/{}", env!("CARGO_PKG_VERSION"))),
@@ -160,7 +172,7 @@ async fn send_heartbeat(
 
   let resp = client
     .post(hb_url)
-    .header("User-Agent", format!("kascompute-miner/{}", version))
+    .header("User-Agent", format!("kascompute-miner/{}", ua_version))
     .json(&payload)
     .send()
     .await;
@@ -170,10 +182,10 @@ async fn send_heartbeat(
     Ok(r) => {
       let st = r.status();
       let body = r.text().await.unwrap_or_default();
-      eprintln!("[HB {}] FAIL {} {}", node_id, st, body);
+      eprintln!("[HB {}] FAIL {} {}", actor_id, st, body);
     }
     Err(e) => {
-      eprintln!("[HB {}] ERROR {}", node_id, e);
+      eprintln!("[HB {}] ERROR {}", actor_id, e);
     }
   }
 }
@@ -194,12 +206,8 @@ async fn main() {
 
   let endpoint = normalize_endpoint(endpoint);
 
-  // Job distributor / coordinator identity (lease owner)
   let coordinator_id =
     arg_value(&args, "--node-id").unwrap_or_else(|| "launcher-dev-node".to_string());
-
-  // Worker identity
-  let miner_id = miner_id_from_env_or(&coordinator_id);
 
   let public_key_hex = match arg_value(&args, "--pubkey") {
     Some(v) if !v.trim().is_empty() && v != "00" => v,
@@ -218,6 +226,8 @@ async fn main() {
       std::process::exit(2);
     }
   };
+
+  let miner_id = miner_id_from_env_or_pubkey(&public_key_hex);
 
   let version = arg_value(&args, "--version").unwrap_or_else(|| "1.1.2".to_string());
   let compute_profile = arg_value(&args, "--compute-profile").unwrap_or_else(|| "sim".to_string());
@@ -243,7 +253,6 @@ async fn main() {
 
   let mut last_idle_log = Instant::now() - Duration::from_secs(60);
 
-  // validate privkey bytes once
   let sk_bytes_vec = hex::decode(&private_key_hex).unwrap_or_default();
   if sk_bytes_vec.len() != 32 {
     eprintln!("ERROR: --privkey must be 32 bytes hex (got {} bytes)", sk_bytes_vec.len());
@@ -257,12 +266,10 @@ async fn main() {
   let mut next_hb_at = Instant::now();
 
   loop {
-    // ---- heartbeat(s)
     if Instant::now() >= next_hb_at {
       let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
       let uptime_sec = now_unix.saturating_sub(start_unix);
 
-      // Miner heartbeat -> so server can resolve miner pubkey by miner_id
       send_heartbeat(
         &client,
         &hb_url,
@@ -275,25 +282,11 @@ async fn main() {
       )
       .await;
 
-      // Optional: Coordinator heartbeat -> so dashboard shows node online too
-      send_heartbeat(
-        &client,
-        &hb_url,
-        &version,
-        &coordinator_id,
-        vec!["node".to_string()],
-        &public_key_hex,
-        Some("coordinator".to_string()),
-        uptime_sec,
-      )
-      .await;
-
       next_hb_at = Instant::now() + Duration::from_secs(HEARTBEAT_EVERY_SECS);
     }
 
     let cycle_start = Instant::now();
 
-    // ---- request job lease as coordinator_id (lease owner)
     let resp = match client
       .post(&next_url)
       .header("User-Agent", format!("kascompute-miner/{}", version))
@@ -342,23 +335,22 @@ async fn main() {
     let job_id = lease.id;
     let work_units = lease.work_units;
 
+    // ✅ NEW: include coordinator_id for launcher parsing / node activity feed
     println!(
-      "[MINER {}] job assigned id={} wu={} lease_expires_unix={} server_ts={}",
-      miner_id, job_id, work_units, lease.lease_expires_unix, parsed.ts
+      "[MINER {}] job assigned coordinator_id={} id={} wu={} lease_expires_unix={} server_ts={}",
+      miner_id, coordinator_id, job_id, work_units, lease.lease_expires_unix, parsed.ts
     );
 
-    // ---- simulate work
     let work_ms = work_time_ms(work_units);
     let work_start = Instant::now();
     sleep(Duration::from_millis(work_ms + jitter_ms(350))).await;
     let elapsed_ms = work_start.elapsed().as_millis() as u64;
 
-    // ---- sign payload (MUST match server verify bytes)
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as u64;
 
     let payload_to_sign = ProofPayloadV1ToSign {
-      node_id: coordinator_id.clone(),      // IMPORTANT: coordinator_id
-      miner_id: Some(miner_id.clone()),     // IMPORTANT: Some(miner_id)
+      node_id: coordinator_id.clone(),
+      miner_id: Some(miner_id.clone()),
       job_id,
       work_units,
       workload_mode: compute_profile.clone(),
@@ -374,10 +366,6 @@ async fn main() {
     let sig = signing.sign(hash.as_slice());
     let signature_hex = hex::encode(sig.to_bytes());
 
-    // ---- submit proof
-    // IMPORTANT:
-    // - proof submit node_id MUST be coordinator_id (job owner) -> avoids job_wrong_node
-    // - miner_id is included separately
     let proof_body = json!({
       "node_id": coordinator_id.clone(),
       "miner_id": miner_id.clone(),
@@ -416,30 +404,26 @@ async fn main() {
       }
     }
 
-if sent_ok {
-  // keep `node_id=` FIRST for launcher parsers 
-  // node_id here = miner_id (worker identity)
-  println!(
-    "MINER_PROOF node_id={} coordinator_id={} miner_id={} job={} wu={} elapsed_ms={} ts={} hash={} sig={} pubkey={}",
-    miner_id,
-    coordinator_id,
-    miner_id,
-    job_id,
-    work_units,
-    elapsed_ms,
-    ts,
-    proof_hash_hex,
-    signature_hex,
-    public_key_hex
-  );
-} else if let Some(st) = last_status {
-  eprintln!("[MINER {}] proof FAIL job={} {} {}", miner_id, job_id, st, last_body);
-} else {
-  eprintln!("[MINER {}] proof FAIL job={} (no status)", miner_id, job_id);
-}
+    if sent_ok {
+      println!(
+        "MINER_PROOF node_id={} miner_id={} coordinator_id={} job={} wu={} elapsed_ms={} ts={} hash={} sig={} pubkey={}",
+        coordinator_id,
+        miner_id,
+        coordinator_id,
+        job_id,
+        work_units,
+        elapsed_ms,
+        ts,
+        proof_hash_hex,
+        signature_hex,
+        public_key_hex
+      );
+    } else if let Some(st) = last_status {
+      eprintln!("[MINER {}] proof FAIL job={} {} {}", miner_id, job_id, st, last_body);
+    } else {
+      eprintln!("[MINER {}] proof FAIL job={} (no status)", miner_id, job_id);
+    }
 
-
-    // ---- pacing
     let target = TARGET_MIN_CYCLE_MS + jitter_ms(TARGET_MAX_CYCLE_MS - TARGET_MIN_CYCLE_MS);
     let elapsed = cycle_start.elapsed().as_millis() as u64;
     if elapsed < target {

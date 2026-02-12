@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::{
   collections::HashMap,
+  fs,
   io::{BufRead, BufReader},
   process::{Child, Command as StdCommand, Stdio},
   sync::{
@@ -10,16 +11,13 @@ use std::{
   time::{Duration, Instant},
 };
 
-// ✅ NEW: persist miner_id file
-use std::fs;
-
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager};
 use tokio::task::JoinHandle;
 
-// ✅ unified UI logs
+// unified UI logs
 use crate::logs;
 
-// ✅ Windows: prevent black console window for sidecars
+// Windows: prevent black console window for sidecars
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
@@ -37,7 +35,7 @@ pub struct ProcState {
   pub miner_loop_on: AtomicBool,
   pub miner_loop_handle: Mutex<Option<JoinHandle<()>>>,
 
-  // ✅ restart supervisor
+  // restart supervisor
   pub desired: Mutex<HashMap<String, bool>>,
   pub configs: Mutex<HashMap<String, ServiceConfig>>,
   pub supervisor_on: AtomicBool,
@@ -52,14 +50,75 @@ pub struct LogPayload {
 }
 
 // ============================================================================
-// ✅ Miner proof UI event (parsed from sidecar stdout line: "MINER_PROOF ...")
+// Miner job UI event (parsed from miner stdout line: "[MINER ...] job assigned ...")
+// Used for Node Operator "Jobs distributed" activity.
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+struct MinerJobUi {
+  coordinator_id: String,
+  miner_id: String,
+  job_id: u64,
+  work_units: u64,
+  lease_expires_unix: u64,
+  server_ts: u64,
+}
+
+fn parse_miner_job_line(line: &str) -> Option<MinerJobUi> {
+  let s = line.trim();
+
+  // We expect NEW format from kascompute-miner:
+  // [MINER <miner_id>] job assigned coordinator_id=<id> id=<job> wu=<wu> lease_expires_unix=<u> server_ts=<ts>
+  if !s.contains(" job assigned ") {
+    return None;
+  }
+
+  // Extract miner_id from prefix: [MINER X]
+  let miner_id = if let Some(p1) = s.find("[MINER ") {
+    let rest = &s[p1 + 7..];
+    rest.split(']').next().map(|x| x.trim().to_string())
+  } else {
+    None
+  }?;
+
+  let mut coordinator_id: Option<String> = None;
+  let mut job_id: Option<u64> = None;
+  let mut wu: Option<u64> = None;
+  let mut lease: Option<u64> = None;
+  let mut server_ts: Option<u64> = None;
+
+  for tok in s.split_whitespace() {
+    let Some((k, v)) = tok.split_once('=') else { continue; };
+    match k {
+      "coordinator_id" => coordinator_id = Some(v.to_string()),
+      "id" => job_id = v.parse().ok(),
+      "wu" => wu = v.parse().ok(),
+      "lease_expires_unix" => lease = v.parse().ok(),
+      "server_ts" => server_ts = v.parse().ok(),
+      _ => {}
+    }
+  }
+
+  Some(MinerJobUi {
+    coordinator_id: coordinator_id?,
+    miner_id,
+    job_id: job_id?,
+    work_units: wu?,
+    lease_expires_unix: lease?,
+    server_ts: server_ts?,
+  })
+}
+
+// ============================================================================
+// Miner proof UI event (parsed from sidecar stdout line: "MINER_PROOF ...")
 // Keeps frontend Proof Stats + Recent Proofs working.
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize)]
 struct MinerProofUi {
-  node_id: String,
-  miner_id: String,
+  node_id: String,        // coordinator_id (job owner)
+  coordinator_id: String, // same as node_id
+  miner_id: String,       // worker id
   job_id: u64,
   work_units: u64,
   elapsed_ms: u64,
@@ -79,7 +138,8 @@ fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
 
   // tokens: key=value
   let mut node_id: Option<String> = None;
-  let mut miner_id: Option<String> = None; 
+  let mut coordinator_id: Option<String> = None;
+  let mut miner_id: Option<String> = None;
   let mut job_id: Option<u64> = None;
   let mut work_units: Option<u64> = None;
   let mut elapsed_ms: Option<u64> = None;
@@ -89,12 +149,11 @@ fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
   let mut pubkey: Option<String> = None;
 
   for tok in line.split_whitespace().skip(1) {
-    // ✅ be tolerant: ignore junk tokens
     let Some((k, v)) = tok.split_once('=') else { continue; };
-
     match k {
       "node_id" => node_id = Some(v.to_string()),
-      "miner_id" => miner_id = Some(v.to_string()), 
+      "coordinator_id" => coordinator_id = Some(v.to_string()),
+      "miner_id" => miner_id = Some(v.to_string()),
       "job" => job_id = v.parse().ok(),
       "wu" => work_units = v.parse().ok(),
       "elapsed_ms" => elapsed_ms = v.parse().ok(),
@@ -107,11 +166,12 @@ fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
   }
 
   let node_id = node_id?;
-  // ✅ fallback: if miner didn't provide miner_id, treat miner==node (legacy safe)
-  let miner_id = miner_id.unwrap_or_else(|| node_id.clone());
+  let coordinator_id = coordinator_id.unwrap_or_else(|| node_id.clone());
+  let miner_id = miner_id.unwrap_or_else(|| "unknown".into());
 
   Some(MinerProofUi {
-    node_id,
+    node_id: node_id.clone(),
+    coordinator_id,
     miner_id,
     job_id: job_id?,
     work_units: work_units?,
@@ -126,15 +186,82 @@ fn parse_miner_proof_line(line: &str) -> Option<MinerProofUi> {
 }
 
 // ============================================================================
-// ✅ Miner ID persistence (per installation)
-// ENV exported to miner sidecar: KASCOMPUTE_MINER_ID
+// Identity + IDs (Mainnet-ready)
+// IMPORTANT: Your identity.json is in Roaming:
+//   %APPDATA%\com.kascompute.launcher\identity.json
+// Therefore we use BaseDirectory::AppData (Roaming) for identity + node_id.txt + miner_id.txt
 // ============================================================================
 
-fn load_or_create_miner_id(app: &AppHandle) -> String {
-  // store stable in AppLocalData (survives restarts)
+fn env_nonempty(key: &str) -> Option<String> {
+  std::env::var(key)
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
+}
+
+fn try_load_node_id_from_identity_json(app: &AppHandle) -> Option<String> {
+  // Roaming/AppData
+  let path = app.path().resolve("identity.json", BaseDirectory::AppData).ok()?;
+  let raw = fs::read_to_string(path).ok()?;
+  let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+
+  let pick = v
+    .get("node_id")
+    .and_then(|x| x.as_str())
+    .or_else(|| v.get("id").and_then(|x| x.as_str()))
+    .or_else(|| {
+      v.get("identity")
+        .and_then(|x| x.get("node_id"))
+        .and_then(|x| x.as_str())
+    })
+    .or_else(|| {
+      v.get("identity")
+        .and_then(|x| x.get("id"))
+        .and_then(|x| x.as_str())
+    });
+
+  pick
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
+}
+
+fn load_or_create_node_id(app: &AppHandle) -> String {
+  if let Some(id) = env_nonempty("KASCOMPUTE_NODE_ID") {
+    return id;
+  }
+
   let path = app
     .path()
-    .resolve("miner_id.txt", BaseDirectory::AppLocalData)
+    .resolve("node_id.txt", BaseDirectory::AppData)
+    .unwrap_or_else(|_| std::path::PathBuf::from("node_id.txt"));
+
+  if let Some(id) = try_load_node_id_from_identity_json(app) {
+    if let Some(parent) = path.parent() {
+      let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(&path, &id);
+    return id;
+  }
+
+  if let Ok(s) = fs::read_to_string(&path) {
+    let s = s.trim().to_string();
+    if !s.is_empty() {
+      return s;
+    }
+  }
+
+  let id = format!("kc_node_{:016x}", rand_u64());
+  if let Some(parent) = path.parent() {
+    let _ = fs::create_dir_all(parent);
+  }
+  let _ = fs::write(&path, &id);
+  id
+}
+
+fn load_or_create_miner_id(app: &AppHandle) -> String {
+  let path = app
+    .path()
+    .resolve("miner_id.txt", BaseDirectory::AppData)
     .unwrap_or_else(|_| std::path::PathBuf::from("miner_id.txt"));
 
   if let Ok(s) = fs::read_to_string(&path) {
@@ -154,7 +281,6 @@ fn load_or_create_miner_id(app: &AppHandle) -> String {
   id
 }
 
-// small rng without extra crates
 fn rand_u64() -> u64 {
   use std::time::{SystemTime, UNIX_EPOCH};
   let now = SystemTime::now()
@@ -162,7 +288,6 @@ fn rand_u64() -> u64 {
     .unwrap_or_default()
     .as_nanos() as u64;
 
-  // xorshift-ish
   let mut x = now ^ (now << 13);
   x ^= x >> 7;
   x ^= x << 17;
@@ -209,7 +334,6 @@ pub fn pid_of(state: &ProcState, name: &str) -> Option<u32> {
   }
 }
 
-// desired + config
 pub async fn set_desired(state: &ProcState, name: &str, v: bool) {
   if let Ok(mut d) = state.desired.lock() {
     d.insert(name.to_string(), v);
@@ -262,7 +386,6 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
     let mut last_restart: HashMap<String, Instant> = HashMap::new();
     let mut crash_window: HashMap<String, (Instant, u32)> = HashMap::new();
 
-    // capture unified log state once for the supervisor task
     let ui_logs = app2.state::<logs::LogState>().inner().clone();
 
     loop {
@@ -273,7 +396,6 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
       for name in ["node", "miner"] {
         let desired = get_desired(state2.as_ref(), name);
 
-        // cleanup exited children & mark uptime stopped
         let exited = {
           let mut map = match state2.procs.lock() {
             Ok(m) => m,
@@ -301,38 +423,23 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
           let crashed = !success;
           crate::runtime_state::mark_stopped(&app2, name, crashed);
 
-          let line = if crashed {
-            "process exited (crash)"
-          } else {
-            "process exited"
-          }
-          .to_string();
+          let line = if crashed { "process exited (crash)" } else { "process exited" }.to_string();
 
           let _ = app2.emit(
             "sidecar:event",
-            LogPayload {
-              target: name.to_string(),
-              stream: "event".into(),
-              line: line.clone(),
-            },
+            LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
           );
 
           logs::push_ui(&app2, &ui_logs, name, "event", line);
         }
 
         if desired && !is_running(state2.as_ref(), name) {
-          // cooldown
           let now = Instant::now();
-          let lr = last_restart
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| now - Duration::from_secs(60));
-
+          let lr = last_restart.get(name).cloned().unwrap_or_else(|| now - Duration::from_secs(60));
           if now.duration_since(lr) < Duration::from_millis(900) {
             continue;
           }
 
-          // restart limit (8 per 60s)
           let (win_start, count) = crash_window.get(name).cloned().unwrap_or((now, 0));
           let (start2, count2) = if now.duration_since(win_start) > Duration::from_secs(60) {
             (now, 0)
@@ -341,22 +448,15 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
           };
 
           if count2 >= 8 {
-            // disable desired to prevent loops
             if let Ok(mut d) = state2.desired.lock() {
               d.insert(name.to_string(), false);
             }
 
             let line = "restart limit hit → stopping service".to_string();
-
             let _ = app2.emit(
               "sidecar:event",
-              LogPayload {
-                target: name.to_string(),
-                stream: "event".into(),
-                line: line.clone(),
-              },
+              LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
             );
-
             logs::push_ui(&app2, &ui_logs, name, "event", line);
             continue;
           }
@@ -366,19 +466,13 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
             last_restart.insert(name.to_string(), now);
 
             let line = "auto-restart...".to_string();
-
             let _ = app2.emit(
               "sidecar:event",
-              LogPayload {
-                target: name.to_string(),
-                stream: "event".into(),
-                line: line.clone(),
-              },
+              LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
             );
-
             logs::push_ui(&app2, &ui_logs, name, "event", line);
 
-            // ✅ FIX: clone args so we don't move out of cfg
+            // spawn_sidecar logs resolved/spawned exactly once (avoid duplicates)
             let _ = spawn_sidecar(app2.clone(), state2.as_ref(), name, &cfg.program, cfg.args.clone()).await;
           }
         }
@@ -393,6 +487,23 @@ fn ensure_supervisor(app: AppHandle, state: std::sync::Arc<ProcState>) {
   }
 }
 
+fn strip_arg_pair(v: Vec<String>, key: &str) -> Vec<String> {
+  let mut out: Vec<String> = Vec::with_capacity(v.len());
+  let mut i = 0usize;
+  while i < v.len() {
+    if v[i] == key {
+      i += 1;
+      if i < v.len() && !v[i].starts_with("--") {
+        i += 1;
+      }
+      continue;
+    }
+    out.push(v[i].clone());
+    i += 1;
+  }
+  out
+}
+
 pub async fn spawn_sidecar(
   app: AppHandle,
   state: &ProcState,
@@ -404,10 +515,8 @@ pub async fn spawn_sidecar(
     return Ok(());
   }
 
-  // unified log state for this function (clone for threads)
   let ui_logs = app.state::<logs::LogState>().inner().clone();
 
-  // Installer-safe: resolve from app resources
   let program_path = app
     .path()
     .resolve(program, BaseDirectory::Resource)
@@ -419,31 +528,18 @@ pub async fn spawn_sidecar(
 
   {
     let line = format!("resolved path: {}", program_path.display());
-
     let _ = app.emit(
       "sidecar:event",
-      LogPayload {
-        target: name.to_string(),
-        stream: "event".into(),
-        line: line.clone(),
-      },
+      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
     );
-
     logs::push_ui(&app, &ui_logs, name, "event", line);
   }
 
   let mut cmd = StdCommand::new(program_path);
 
-  // Windows: do NOT spawn a black console window
   #[cfg(windows)]
   cmd.creation_flags(CREATE_NO_WINDOW);
 
-  cmd.args(args.clone());
-  cmd.stdin(Stdio::null());
-  cmd.stdout(Stdio::piped());
-  cmd.stderr(Stdio::piped());
-
-  // Sidecar API (PRO)
   let api = std::env::var("KASCOMPUTE_API")
     .ok()
     .filter(|s| !s.trim().is_empty())
@@ -453,7 +549,32 @@ pub async fn spawn_sidecar(
 
   cmd.env("KASCOMPUTE_API", api.clone());
 
-  // ✅ NEW: Miner-ID nur für miner sidecar
+  let mut args2 = args.clone();
+  if name == "node" {
+    args2 = strip_arg_pair(args2, "--node-id");
+  }
+
+  cmd.args(args2);
+  cmd.stdin(Stdio::null());
+  cmd.stdout(Stdio::piped());
+  cmd.stderr(Stdio::piped());
+
+  cmd.env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()));
+
+  if name == "node" {
+    let node_id = load_or_create_node_id(&app);
+
+    cmd.env("KASCOMPUTE_NODE_ID", node_id.clone());
+    cmd.arg("--node-id").arg(node_id.clone());
+
+    let line = format!("node_id for sidecar: {}", node_id);
+    let _ = app.emit(
+      "sidecar:event",
+      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
+    );
+    logs::push_ui(&app, &ui_logs, name, "event", line);
+  }
+
   if name == "miner" {
     let miner_id = load_or_create_miner_id(&app);
     cmd.env("KASCOMPUTE_MINER_ID", miner_id.clone());
@@ -461,33 +582,17 @@ pub async fn spawn_sidecar(
     let line = format!("miner_id for sidecar: {}", miner_id);
     let _ = app.emit(
       "sidecar:event",
-      LogPayload {
-        target: name.to_string(),
-        stream: "event".into(),
-        line: line.clone(),
-      },
+      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
     );
     logs::push_ui(&app, &ui_logs, name, "event", line);
   }
 
-  // Optional: make sidecar logs readable
-  cmd.env(
-    "RUST_LOG",
-    std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
-  );
-
   {
     let line = format!("api for sidecar: {}", api);
-
     let _ = app.emit(
       "sidecar:event",
-      LogPayload {
-        target: name.to_string(),
-        stream: "event".into(),
-        line: line.clone(),
-      },
+      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
     );
-
     logs::push_ui(&app, &ui_logs, name, "event", line);
   }
 
@@ -501,21 +606,14 @@ pub async fn spawn_sidecar(
     map.insert(name.to_string(), child);
   }
 
-  // uptime start (persisted)
   crate::runtime_state::mark_started(&app, name);
 
   {
     let line = format!("spawned: {}", program);
-
     let _ = app.emit(
       "sidecar:event",
-      LogPayload {
-        target: name.to_string(),
-        stream: "event".into(),
-        line: line.clone(),
-      },
+      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
     );
-
     logs::push_ui(&app, &ui_logs, name, "event", line);
   }
 
@@ -527,8 +625,13 @@ pub async fn spawn_sidecar(
     std::thread::spawn(move || {
       let reader = BufReader::new(out);
       for line in reader.lines().flatten() {
-        // ✅ parse miner proof line and emit structured UI event
         if target == "miner" {
+          // 1) job assigned -> structured event
+          if let Some(job) = parse_miner_job_line(&line) {
+            let _ = app_clone.emit("miner:job", job);
+          }
+
+          // 2) proof -> structured event
           if let Some(ui) = parse_miner_proof_line(&line) {
             let _ = app_clone.emit("miner:proof", ui);
           }
@@ -539,7 +642,6 @@ pub async fn spawn_sidecar(
           stream: "stdout".into(),
           line: line.clone(),
         };
-
         let _ = app_clone.emit("sidecar:stdout", payload.clone());
         logs::push_ui(&app_clone, &ui_logs_thread, &target, "stdout", payload.line);
       }
@@ -569,7 +671,6 @@ pub async fn spawn_sidecar(
   Ok(())
 }
 
-// managed wrapper (stores config + enables auto-restart)
 pub async fn spawn_sidecar_managed(
   app: AppHandle,
   state_arc: std::sync::Arc<ProcState>,
@@ -601,28 +702,18 @@ pub async fn kill_sidecar(app: AppHandle, state: &ProcState, name: &str) -> Resu
     crate::runtime_state::mark_stopped(&app, name, false);
 
     let line = "killed".to_string();
-
     let _ = app.emit(
       "sidecar:event",
-      LogPayload {
-        target: name.to_string(),
-        stream: "event".into(),
-        line: line.clone(),
-      },
+      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
     );
 
     let ui_logs = app.state::<logs::LogState>().inner().clone();
     logs::push_ui(&app, &ui_logs, name, "event", line);
   } else {
     let line = "not running".to_string();
-
     let _ = app.emit(
       "sidecar:event",
-      LogPayload {
-        target: name.to_string(),
-        stream: "event".into(),
-        line: line.clone(),
-      },
+      LogPayload { target: name.to_string(), stream: "event".into(), line: line.clone() },
     );
 
     let ui_logs = app.state::<logs::LogState>().inner().clone();

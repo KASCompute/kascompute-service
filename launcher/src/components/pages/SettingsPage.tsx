@@ -1,17 +1,20 @@
-import { useEffect, useState } from "react";
-import { FolderOpen, Globe, Check, AlertCircle, RefreshCw, Download } from "lucide-react";
-import { GlassCard, GlassCardHeader, GlassCardTitle, GlassCardContent } from "@/components/common/GlassCard";
+import { useEffect, useMemo, useState } from "react";
+import { Globe, RefreshCw, Download, ExternalLink } from "lucide-react";
+import {
+  GlassCard,
+  GlassCardHeader,
+  GlassCardTitle,
+  GlassCardContent,
+} from "@/components/common/GlassCard";
 import { ValidatedInput } from "@/components/common/ValidatedInput";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { isTauri } from "@/lib/tauri";
-import type { Config, RequiredScript } from "@/types";
-import { checkForUpdates } from "@/lib/updater"; // <- nutzt dein vorhandenes file
+import type { Config } from "@/types";
+import { checkForUpdates } from "@/lib/updater";
 
 interface SettingsPageProps {
   config: Config;
-  requiredScripts: RequiredScript[];
+  requiredScripts?: any[]; // legacy prop, not used
   onUpdateConfig: (updates: Partial<Config>) => void;
 }
 
@@ -22,29 +25,37 @@ type UpdateState =
   | { status: "none"; msg?: string }
   | { status: "error"; msg: string };
 
-export function SettingsPage({ config, requiredScripts, onUpdateConfig }: SettingsPageProps) {
-  const [scriptsDir, setScriptsDir] = useState(config.scriptsDirectory);
+export function SettingsPage({ config, onUpdateConfig }: SettingsPageProps) {
   const [dashboardUrl, setDashboardUrl] = useState(config.dashboardUrl);
 
-  // Updates
   const [u, setU] = useState<UpdateState>({ status: "idle" });
 
-  // Simple validation
-  const isValidPath = scriptsDir.length > 0 && (scriptsDir.includes("\\") || scriptsDir.includes("/"));
-  const isValidUrl = dashboardUrl.startsWith("http://") || dashboardUrl.startsWith("https://");
-
-  const handleScriptsDirChange = (value: string) => {
-    setScriptsDir(value);
-    onUpdateConfig({ scriptsDirectory: value });
-  };
+  const isValidUrl =
+    dashboardUrl.startsWith("http://") || dashboardUrl.startsWith("https://");
 
   const handleDashboardUrlChange = (value: string) => {
     setDashboardUrl(value);
     onUpdateConfig({ dashboardUrl: value });
   };
 
-  const handleRoleChange = (value: string) => {
-    onUpdateConfig({ role: value as Config["role"] });
+  // Always-safe opener: no imports, never breaks build
+  const openDashboard = async () => {
+    const url = dashboardUrl.trim();
+    if (!url || !isValidUrl) return;
+
+    // Try Tauri global if available (v1 style). If not, fallback to window.open.
+    try {
+      const w = window as any;
+      const tauriOpen = w?.__TAURI__?.shell?.open;
+      if (typeof tauriOpen === "function") {
+        await tauriOpen(url);
+        return;
+      }
+    } catch {
+      // ignore and fallback
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const runUpdateCheck = async () => {
@@ -69,7 +80,6 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
   const runInstall = async () => {
     if (u.status !== "available") return;
     try {
-      // Tauri updater Update object typically has download/install
       await u.update.download();
       await u.update.install();
     } catch (e: any) {
@@ -78,13 +88,14 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
   };
 
   useEffect(() => {
-    // optional: auto-check on open (safe, and keeps button visible regardless)
     runUpdateCheck();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateBusy = u.status === "checking";
   const updateAvailable = u.status === "available";
+
+  const cleanUrl = useMemo(() => dashboardUrl.trim(), [dashboardUrl]);
 
   return (
     <div className="space-y-6">
@@ -93,7 +104,7 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
         <p className="text-muted-foreground text-sm">Configure your KASCompute launcher</p>
       </div>
 
-      {/* Configuration Section */}
+      {/* Configuration */}
       <GlassCard>
         <GlassCardHeader>
           <GlassCardTitle>Configuration</GlassCardTitle>
@@ -101,66 +112,61 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
         </GlassCardHeader>
 
         <GlassCardContent className="space-y-6">
-          {/* Scripts Directory */}
-          <div className="flex items-start gap-4">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-6">
-              <FolderOpen className="h-5 w-5 text-primary" />
-            </div>
-            <div className="flex-1">
-              <ValidatedInput
-                label="Scripts Directory"
-                value={scriptsDir}
-                onChange={(e) => handleScriptsDirChange(e.target.value)}
-                placeholder="C:\KASCompute\scripts"
-                validationState={scriptsDir ? (isValidPath ? "valid" : "warning") : "none"}
-                validationMessage={scriptsDir && !isValidPath ? "Enter a valid directory path" : undefined}
-                hint="Path to the folder containing your KASCompute scripts"
-              />
-            </div>
-          </div>
-
-          {/* Dashboard URL */}
           <div className="flex items-start gap-4">
             <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-6">
               <Globe className="h-5 w-5 text-primary" />
             </div>
+
             <div className="flex-1">
               <ValidatedInput
                 label="Dashboard URL"
                 value={dashboardUrl}
                 onChange={(e) => handleDashboardUrlChange(e.target.value)}
-                placeholder="https://dashboard.kascompute.io"
+                placeholder="https://dashboard.kascompute.org"
                 validationState={dashboardUrl ? (isValidUrl ? "valid" : "invalid") : "none"}
-                validationMessage={dashboardUrl && !isValidUrl ? "URL must start with http:// or https://" : undefined}
+                validationMessage={
+                  dashboardUrl && !isValidUrl ? "URL must start with http:// or https://" : undefined
+                }
                 hint="The KASCompute dashboard endpoint for reporting"
               />
-            </div>
-          </div>
 
-          {/* Role Selector */}
-          <div className="flex items-start gap-4">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-6">
-              <span className="text-primary font-bold text-sm">R</span>
-            </div>
-            <div className="flex-1 space-y-2">
-              <Label className="text-sm font-medium text-foreground">Role</Label>
-              <Select value={config.role} onValueChange={handleRoleChange}>
-                <SelectTrigger className="bg-input border-border/50 focus:border-primary">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  <SelectItem value="node">Node Operator Only</SelectItem>
-                  <SelectItem value="miner">Miner Only</SelectItem>
-                  <SelectItem value="both">Both (dev)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Select which services to enable</p>
+              {/* Clickable row (safe everywhere) */}
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={openDashboard}
+                  disabled={!isValidUrl}
+                  className="h-8"
+                  title="Open dashboard"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open
+                </Button>
+
+                {isValidUrl ? (
+                  <a
+                    href={cleanUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-mono text-primary hover:underline truncate max-w-[420px]"
+                    title={cleanUrl}
+                  >
+                    {cleanUrl}
+                  </a>
+                ) : (
+                  <span className="text-xs font-mono text-muted-foreground truncate max-w-[420px]">
+                    {cleanUrl || "—"}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </GlassCardContent>
       </GlassCard>
 
-      {/* Updates Section */}
+      {/* Updates */}
       <GlassCard>
         <GlassCardHeader>
           <GlassCardTitle>Updates</GlassCardTitle>
@@ -206,40 +212,7 @@ export function SettingsPage({ config, requiredScripts, onUpdateConfig }: Settin
           </div>
         </GlassCardContent>
       </GlassCard>
-
-      {/* Required Scripts Section */}
-      <GlassCard>
-        <GlassCardHeader>
-          <GlassCardTitle>Required Scripts</GlassCardTitle>
-        </GlassCardHeader>
-
-        <GlassCardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {requiredScripts.map((script) => (
-              <ScriptCheckItem key={script.name} script={script} />
-            ))}
-          </div>
-        </GlassCardContent>
-      </GlassCard>
     </div>
   );
 }
-
-interface ScriptCheckItemProps {
-  script: RequiredScript;
-}
-
-function ScriptCheckItem({ script }: ScriptCheckItemProps) {
-  return (
-    <div
-      className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
-        script.present ? "border-success/30 bg-success/5" : "border-warning/30 bg-warning/5"
-      }`}
-    >
-      {script.present ? <Check className="h-4 w-4 text-success" /> : <AlertCircle className="h-4 w-4 text-warning" />}
-      <span className={`text-sm font-mono ${script.present ? "text-foreground" : "text-warning"}`}>
-        {script.name}
-      </span>
-    </div>
-  );
-}
+     

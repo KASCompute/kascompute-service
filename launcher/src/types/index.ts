@@ -36,15 +36,19 @@ export interface LogEntry {
 ========================= */
 
 export interface Config {
-  scriptsDirectory: string;
   dashboardUrl: string;
-  role: "node" | "miner" | "both";
+
+  // legacy fields (kept for backward compatibility; UI no longer uses them)
+  scriptsDirectory?: string;
+  role?: "node" | "miner" | "both";
 }
 
+// legacy (UI removed)
 export interface RequiredScript {
   name: string;
   present: boolean;
 }
+
 
 /* =========================
    TAURI COMMANDS
@@ -99,6 +103,10 @@ export type RewardView = {
   share: number; // 0..1
 };
 
+// =========================
+// Miner Rewards (Worker)
+// =========================
+
 export type MinerBalanceView = {
   miner_id: string;
   total_mined_nano: number;
@@ -109,6 +117,27 @@ export type RewardLedgerEntry = {
   block_height: number;
   timestamp_unix: number;
   miner_id: string;
+  amount_nano: number;
+  share: number; // 0..1
+  compute_units: number;
+  proofs_count: number;
+  reason: string;
+};
+
+// =========================
+// Node Rewards (Operator / Coordinator)
+// =========================
+
+export type NodeBalanceView = {
+  node_id: string;
+  total_mined_nano: number;
+  last_block_reward_nano: number;
+};
+
+export type NodeRewardLedgerEntry = {
+  block_height: number;
+  timestamp_unix: number;
+  node_id: string;
   amount_nano: number;
   share: number; // 0..1
   compute_units: number;

@@ -31,6 +31,22 @@ fn arg_value(args: &[String], key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+fn arg_value_opt(args: &[String], key: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == key)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn env_opt(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 // Removes trailing slashes, and if someone passes ".../v1" we strip it
 fn normalize_endpoint(mut s: String) -> String {
     s = s.trim().trim_end_matches('/').to_string();
@@ -53,16 +69,28 @@ async fn main() {
     let endpoint = if !cli.trim().is_empty() {
         cli
     } else {
-        std::env::var("KASCOMPUTE_API")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+        env_opt("KASCOMPUTE_API")
             .unwrap_or_else(|| "https://kascompute-protocol-v1.onrender.com".to_string())
     };
 
     let endpoint = normalize_endpoint(endpoint);
 
-    let node_id = arg_value(&args, "--node-id", "launcher-dev-node");
-    let public_key_hex = arg_value(&args, "--pubkey", "dev-public-key");
+    // Priority (Node):
+    // 1) CLI --node-id
+    // 2) ENV KASCOMPUTE_NODE_ID (set by Tauri sidecar supervisor)
+    // 3) fallback
+    let node_id = arg_value_opt(&args, "--node-id")
+        .or_else(|| env_opt("KASCOMPUTE_NODE_ID"))
+        .unwrap_or_else(|| "launcher-dev-node".to_string());
+
+    // Priority (Pubkey):
+    // 1) CLI --pubkey
+    // 2) ENV KASCOMPUTE_PUBLIC_KEY_HEX
+    // 3) fallback
+    let public_key_hex = arg_value_opt(&args, "--pubkey")
+        .or_else(|| env_opt("KASCOMPUTE_PUBLIC_KEY_HEX"))
+        .unwrap_or_else(|| "dev-public-key".to_string());
+
     let role = arg_value(&args, "--role", "node");
     let version = arg_value(&args, "--version", "0.1.0");
 

@@ -19,8 +19,12 @@ type SidecarLogPayload = {
   line: string;
 };
 
-type MinerProofUi = {
-  node_id: string;
+// ✅ Keep this compatible with your existing UI types.
+// Extra fields are OPTIONAL so nothing breaks if older code reads only the basics.
+export type MinerProofUi = {
+  node_id: string; // coordinator_id (job owner)
+  miner_id?: string; // worker id (optional for backwards)
+  coordinator_id?: string; // optional
   job_id: number;
   work_units: number;
   elapsed_ms: number;
@@ -32,13 +36,14 @@ type MinerProofUi = {
   public_key_hex: string;
 };
 
-const DEFAULT_API = "https://kascompute-protocol-v1.onrender.com";
-
-function normalizeApiBase(raw?: string) {
-  let base = (raw || DEFAULT_API).trim().replace(/\/+$/, "");
-  if (!base.endsWith("/v1")) base += "/v1";
-  return base;
-}
+export type MinerJobUi = {
+  coordinator_id: string;
+  miner_id: string;
+  job_id: number;
+  work_units: number;
+  lease_expires_unix: number;
+  server_ts: number;
+};
 
 const DEFAULT_NODE: NodeStatus = {
   status: "stopped",
@@ -78,21 +83,22 @@ export function useTauriLauncher() {
   const [nodeLogs, setNodeLogs] = useState<LogEntry[]>([]);
   const [minerLogs, setMinerLogs] = useState<LogEntry[]>([]);
 
-  // ✅ Miner proofs (structured)
+  // structured proofs
   const [minerProofs, setMinerProofs] = useState<MinerProofUi[]>([]);
 
-  // ✅ API Base (Render)
-  const apiBase = normalizeApiBase(import.meta.env.VITE_API_BASE);
+  // ✅ expose ids for pages (only show node id on node page, miner id on miner page)
+  const [nodeId, setNodeId] = useState<string | null>(null);
+  const [minerId, setMinerId] = useState<string | null>(null);
 
-  // verhindert parallele Calls
+  // prevents overlapping refresh/poll
   const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false); // Mutex für refresh/poll (nicht fürs UI)
+  const busyRef = useRef(false);
 
-  // Identity cache (kommt aus Rust get_identity)
+  // Identity cache (from Rust get_identity)
   const identityRef = useRef<{ node_id: string; public_key_hex: string } | null>(null);
 
   const pushLog = useCallback((entry: LogEntry) => {
-    const LIMIT = 300;
+    const LIMIT = 350;
 
     if (entry.target === "node") {
       setNodeLogs((prev) => {
@@ -117,16 +123,15 @@ export function useTauriLauncher() {
         uptime: m?.node?.uptime ?? p.uptime,
         ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
       }));
-} else {
-  setNodeStatus(() => ({
-    ...DEFAULT_NODE,
-    status: "stopped",
-    pid: undefined,
-    uptime: undefined,
-    ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
-  }));
-}
-
+    } else {
+      setNodeStatus(() => ({
+        ...DEFAULT_NODE,
+        status: "stopped",
+        pid: undefined,
+        uptime: undefined,
+        ...(typeof m?.node?.crashes === "number" ? ({ crashes: m.node.crashes } as any) : {}),
+      }));
+    }
 
     // MINER
     if (s?.miner?.running) {
@@ -183,7 +188,7 @@ export function useTauriLauncher() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  // ✅ Live logs via events + Profi heartbeat derived from node output
+  // live logs
   useEffect(() => {
     if (!isTauri()) return;
 
@@ -192,7 +197,6 @@ export function useTauriLauncher() {
 
     const levelFromStream = (stream: SidecarLogPayload["stream"]): LogEntry["level"] => {
       if (stream === "stderr") return "error";
-      if (stream === "event") return "info";
       return "info";
     };
 
@@ -243,7 +247,44 @@ export function useTauriLauncher() {
     };
   }, [pushLog]);
 
-  // ✅ Miner proof events (structured for UI)
+  // ✅ miner job events -> node activity
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let alive = true;
+    let unlisten: null | (() => void) = null;
+
+    (async () => {
+      try {
+        unlisten = await listen("miner:job", (e) => {
+          if (!alive) return;
+          const p = e.payload as MinerJobUi;
+          if (!p?.job_id || !p?.miner_id || !p?.coordinator_id) return;
+
+          setMinerId((prev) => prev ?? p.miner_id);
+
+          pushLog({
+            id: newId(),
+            target: "node",
+            level: "info",
+            timestamp: nowTs(),
+            message: `Distributed job #${p.job_id} → miner=${p.miner_id} wu=${p.work_units}`,
+          });
+        });
+      } catch (err) {
+        console.error("Failed to listen miner:job", err);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      try {
+        unlisten?.();
+      } catch {}
+    };
+  }, [pushLog]);
+
+  // ✅ miner proof events -> miner stats + node "proof received"
   useEffect(() => {
     if (!isTauri()) return;
 
@@ -257,18 +298,29 @@ export function useTauriLauncher() {
           const p = e.payload as MinerProofUi;
           if (!p?.job_id) return;
 
+          if (p.miner_id) setMinerId((prev) => prev ?? p.miner_id);
+
           setMinerProofs((prev) => {
             const next = [...prev, p];
             return next.length > 200 ? next.slice(next.length - 200) : next;
           });
 
-          // also push one human-friendly line into miner logs
+          // compact miner log
           pushLog({
             id: newId(),
             target: "miner",
             level: "info",
             timestamp: nowTs(),
             message: `signed proof job=${p.job_id} hash=${shortHex(p.proof_hash_hex)} sig=${shortHex(p.signature_hex)}`,
+          });
+
+          // node activity
+          pushLog({
+            id: newId(),
+            target: "node",
+            level: "info",
+            timestamp: nowTs(),
+            message: `Proof received job #${p.job_id} ← miner=${p.miner_id ?? "?"} wu=${p.work_units} elapsed=${p.elapsed_ms}ms`,
           });
         });
       } catch (err) {
@@ -284,7 +336,7 @@ export function useTauriLauncher() {
     };
   }, [pushLog]);
 
-  // ✅ Load identity once (keep for later / UI)
+  // load identity once
   useEffect(() => {
     if (!isTauri()) return;
 
@@ -293,6 +345,8 @@ export function useTauriLauncher() {
         const id = await safeInvoke<{ node_id: string; public_key_hex: string }>("get_identity");
         if (id?.node_id && id?.public_key_hex) {
           identityRef.current = id;
+          setNodeId(id.node_id);
+
           pushLog({
             id: newId(),
             target: "node",
@@ -307,7 +361,7 @@ export function useTauriLauncher() {
     })();
   }, [pushLog]);
 
-  // ✅ Miner stats
+  // miner stats derived
   const minerStats = useMemo(() => {
     if (!minerProofs.length) {
       return {
@@ -429,6 +483,8 @@ export function useTauriLauncher() {
     minerLogs,
     minerProofs,
     minerStats,
+    nodeId,
+    minerId,
     actions,
     refresh,
   };
